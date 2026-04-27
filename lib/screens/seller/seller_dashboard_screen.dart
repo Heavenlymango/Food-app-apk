@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/api_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/order_provider.dart';
 import '../../models/order.dart';
@@ -56,11 +57,11 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final shopId = auth.user?.shopId ?? '';
+    final shopCode = auth.user?.shopId ?? '';
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Shop ${auth.user?.shopId ?? ''}'),
+        title: Text('Shop $shopCode'),
         bottom: TabBar(
           controller: _tabs,
           indicatorColor: kOrange,
@@ -82,9 +83,9 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
       body: TabBarView(
         controller: _tabs,
         children: [
-          _OrdersTab(shopId: shopId),
-          _MenuTab(shopId: shopId),
-          _SettingsTab(shopId: shopId),
+          _OrdersTab(shopCode: shopCode),
+          _MenuTab(shopCode: shopCode),
+          _SettingsTab(shopCode: shopCode),
         ],
       ),
     );
@@ -94,8 +95,8 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
 // ─────────────────────────── ORDERS TAB ────────────────────────────────────
 
 class _OrdersTab extends StatelessWidget {
-  final String shopId;
-  const _OrdersTab({required this.shopId});
+  final String shopCode;
+  const _OrdersTab({required this.shopCode});
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +111,10 @@ class _OrdersTab extends StatelessWidget {
     final activeOrders = orders.orders
         .where((o) => o.status == 'pending' || o.status == 'preparing')
         .toList();
+    final reservations = orders.orders
+        .where((o) => o.isReservation && o.status == 'pending')
+        .toList()
+      ..sort((a, b) => a.scheduledFor!.compareTo(b.scheduledFor!));
     final revenue = todayOrders
         .where((o) => o.status != 'cancelled')
         .fold<double>(0, (s, o) => s + o.total);
@@ -144,16 +149,34 @@ class _OrdersTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
+          if (reservations.isNotEmpty) ...[
+            Row(
+              children: [
+                const Icon(Icons.schedule, size: 18, color: Colors.purple),
+                const SizedBox(width: 6),
+                const Text('Upcoming Reservations',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...reservations.map((o) => _OrderCard(order: o)),
+            const SizedBox(height: 16),
+          ],
           if (activeOrders.isNotEmpty) ...[
             const Text('Active Orders',
                 style:
-                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            ...activeOrders.map((o) => _OrderCard(order: o)),
+            ...activeOrders
+                .where((o) => !o.isReservation)
+                .map((o) => _OrderCard(order: o)),
             const SizedBox(height: 16),
           ],
           const Text('All Orders',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           if (orders.orders.isEmpty)
             const Center(
@@ -181,8 +204,8 @@ class _OrdersTab extends StatelessWidget {
 // ─────────────────────────── MENU TAB ──────────────────────────────────────
 
 class _MenuTab extends StatefulWidget {
-  final String shopId;
-  const _MenuTab({required this.shopId});
+  final String shopCode;
+  const _MenuTab({required this.shopCode});
 
   @override
   State<_MenuTab> createState() => _MenuTabState();
@@ -192,20 +215,44 @@ class _MenuTabState extends State<_MenuTab> {
   final _db = Supabase.instance.client;
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
+  String? _shopUuid; // resolved from shop_code
 
   @override
   void initState() {
     super.initState();
+    _resolveShopThenFetch();
+  }
+
+  // shop_code (e.g. "A1") → shop UUID — needed because menu_items.shop_id is UUID
+  Future<void> _resolveShopThenFetch() async {
+    setState(() => _loading = true);
+    try {
+      final shop = await _db
+          .from('shops')
+          .select('id')
+          .eq('shop_code', widget.shopCode)
+          .single();
+      _shopUuid = shop['id'] as String;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not find shop: $e')));
+      }
+    }
     _fetch();
   }
 
   Future<void> _fetch() async {
+    if (_shopUuid == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     setState(() => _loading = true);
     try {
       final data = await _db
           .from('menu_items')
           .select()
-          .eq('shop_id', widget.shopId)
+          .eq('shop_id', _shopUuid!)
           .order('name');
       setState(() => _items = List<Map<String, dynamic>>.from(data));
     } catch (e) {
@@ -249,6 +296,7 @@ class _MenuTabState extends State<_MenuTab> {
   }
 
   void _openForm([Map<String, dynamic>? item]) async {
+    if (_shopUuid == null) return;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -257,7 +305,7 @@ class _MenuTabState extends State<_MenuTab> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _MenuItemForm(
-        shopId: widget.shopId,
+        shopUuid: _shopUuid!,
         item: item,
         onSaved: _fetch,
       ),
@@ -360,13 +408,15 @@ class _MenuTabState extends State<_MenuTab> {
   }
 }
 
+// ─────────────────── MENU ITEM FORM + DISCOUNT MANAGEMENT ──────────────────
+
 class _MenuItemForm extends StatefulWidget {
-  final String shopId;
+  final String shopUuid;
   final Map<String, dynamic>? item;
   final VoidCallback onSaved;
 
   const _MenuItemForm(
-      {required this.shopId, this.item, required this.onSaved});
+      {required this.shopUuid, this.item, required this.onSaved});
 
   @override
   State<_MenuItemForm> createState() => _MenuItemFormState();
@@ -384,6 +434,8 @@ class _MenuItemFormState extends State<_MenuItemForm> {
   bool _healthy = false;
   bool _special = false;
   bool _saving = false;
+  List<Map<String, dynamic>> _discounts = [];
+  bool _loadingDiscounts = false;
 
   static const _categories = [
     'Main Course',
@@ -412,6 +464,7 @@ class _MenuItemFormState extends State<_MenuItemForm> {
     _category = i?['category'] as String? ?? 'Main Course';
     _healthy = i?['is_healthy'] as bool? ?? false;
     _special = i?['is_special'] as bool? ?? false;
+    if (widget.item != null) _loadDiscounts();
   }
 
   @override
@@ -428,7 +481,7 @@ class _MenuItemFormState extends State<_MenuItemForm> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     final data = {
-      'shop_id': widget.shopId,
+      'shop_id': widget.shopUuid,
       'name': _name.text.trim(),
       'description': _desc.text.trim(),
       'price': double.parse(_price.text),
@@ -460,6 +513,51 @@ class _MenuItemFormState extends State<_MenuItemForm> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _loadDiscounts() async {
+    setState(() => _loadingDiscounts = true);
+    try {
+      final list =
+          await ApiService.getItemDiscounts(widget.item!['id'] as String);
+      if (mounted) setState(() => _discounts = list);
+    } finally {
+      if (mounted) setState(() => _loadingDiscounts = false);
+    }
+  }
+
+  Future<void> _addDiscount() async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => const _DiscountDialog(),
+    );
+    if (result == null) return;
+    try {
+      await ApiService.addItemDiscount(
+        menuItemId: widget.item!['id'] as String,
+        label: result['label'] as String,
+        discountPercent: result['percent'] as double,
+        daysOfWeek: result['days'] as List<int>,
+        startTime: result['start'] as String,
+        endTime: result['end'] as String,
+      );
+      _loadDiscounts();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
+
+  Future<void> _deleteDiscount(String id) async {
+    await ApiService.deleteItemDiscount(id);
+    _loadDiscounts();
+  }
+
+  Future<void> _toggleDiscount(String id, bool current) async {
+    await ApiService.toggleItemDiscount(id, isActive: !current);
+    _loadDiscounts();
   }
 
   @override
@@ -533,7 +631,7 @@ class _MenuItemFormState extends State<_MenuItemForm> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      initialValue: _category,
+                      value: _category,
                       decoration:
                           const InputDecoration(labelText: 'Category'),
                       items: _categories
@@ -559,29 +657,13 @@ class _MenuItemFormState extends State<_MenuItemForm> {
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: SwitchListTile(
-                      title: const Text('Healthy',
-                          style: TextStyle(fontSize: 13)),
-                      value: _healthy,
-                      activeThumbColor: kGreen,
-                      onChanged: (v) => setState(() => _healthy = v),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                  Expanded(
-                    child: SwitchListTile(
-                      title: const Text('Special (30% off)',
-                          style: TextStyle(fontSize: 13)),
-                      value: _special,
-                      activeThumbColor: kOrange,
-                      onChanged: (v) => setState(() => _special = v),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
+              SwitchListTile(
+                title: const Text('Healthy',
+                    style: TextStyle(fontSize: 13)),
+                value: _healthy,
+                activeThumbColor: kGreen,
+                onChanged: (v) => setState(() => _healthy = v),
+                contentPadding: EdgeInsets.zero,
               ),
               const SizedBox(height: 20),
               ElevatedButton(
@@ -601,9 +683,347 @@ class _MenuItemFormState extends State<_MenuItemForm> {
                             fontSize: 16,
                             fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(height: 16),
+
+              if (editing) ...[
+                const SizedBox(height: 24),
+                const Divider(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.local_offer, size: 16, color: kOrange),
+                        SizedBox(width: 6),
+                        Text('Discount Schedules',
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    TextButton.icon(
+                      onPressed: _addDiscount,
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add'),
+                      style:
+                          TextButton.styleFrom(foregroundColor: kOrange),
+                    ),
+                  ],
+                ),
+                if (_loadingDiscounts)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else if (_discounts.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No schedules yet. Add one to offer time-limited deals.',
+                      style: TextStyle(
+                          color: Colors.grey.shade500, fontSize: 12),
+                    ),
+                  )
+                else
+                  ..._discounts.map((d) => _DiscountTile(
+                        discount: d,
+                        onToggle: () => _toggleDiscount(
+                            d['id'] as String,
+                            d['is_active'] as bool? ?? true),
+                        onDelete: () =>
+                            _deleteDiscount(d['id'] as String),
+                      )),
+              ],
+              const SizedBox(height: 24),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────── DISCOUNT SCHEDULE WIDGETS ─────────────────────────
+
+class _DiscountTile extends StatelessWidget {
+  final Map<String, dynamic> discount;
+  final VoidCallback onToggle;
+  final VoidCallback onDelete;
+
+  const _DiscountTile({
+    required this.discount,
+    required this.onToggle,
+    required this.onDelete,
+  });
+
+  static const _dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  String _formatDays(List days) {
+    final sorted = days.map((d) => (d as num).toInt()).toList()..sort();
+    if (sorted.length == 5 && sorted.first == 1 && sorted.last == 5) {
+      return 'Mon–Fri';
+    }
+    if (sorted.length == 6 && sorted.first == 1 && sorted.last == 6) {
+      return 'Mon–Sat';
+    }
+    return sorted.map((d) => _dayNames[d]).join(', ');
+  }
+
+  String _fmtTime(String t) {
+    final parts = t.split(':');
+    if (parts.length < 2) return t;
+    final h = int.tryParse(parts[0]) ?? 0;
+    final m = parts[1];
+    final suffix = h >= 12 ? 'PM' : 'AM';
+    final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
+    return '$h12:$m $suffix';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = discount['is_active'] as bool? ?? true;
+    final pct =
+        (discount['discount_percent'] as num).toStringAsFixed(0);
+    final label = discount['label'] as String? ?? 'Deal';
+    final days =
+        _formatDays(discount['days_of_week'] as List? ?? []);
+    final start = _fmtTime(discount['start_time'] as String);
+    final end = _fmtTime(discount['end_time'] as String);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isActive
+            ? kOrange.withValues(alpha: 0.06)
+            : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: isActive
+                ? kOrange.withValues(alpha: 0.3)
+                : Colors.grey.shade300),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: kOrange,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text('-$pct%',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(label,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text('$days  ·  $start – $end',
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.grey)),
+              ],
+            ),
+          ),
+          Switch(
+            value: isActive,
+            activeThumbColor: kOrange,
+            onChanged: (_) => onToggle(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline,
+                size: 18, color: Colors.red),
+            onPressed: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscountDialog extends StatefulWidget {
+  const _DiscountDialog();
+
+  @override
+  State<_DiscountDialog> createState() => _DiscountDialogState();
+}
+
+class _DiscountDialogState extends State<_DiscountDialog> {
+  final _labelCtrl =
+      TextEditingController(text: 'Lunch Special');
+  final _pctCtrl = TextEditingController(text: '20');
+  TimeOfDay _start = const TimeOfDay(hour: 11, minute: 0);
+  TimeOfDay _end = const TimeOfDay(hour: 13, minute: 0);
+  final Set<int> _days = {1, 2, 3, 4, 5}; // Mon–Fri
+
+  static const _dayLabels = [
+    'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'
+  ];
+
+  String _fmt(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  @override
+  void dispose() {
+    _labelCtrl.dispose();
+    _pctCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Discount Schedule'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _labelCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Label (e.g. Lunch Special)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _pctCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Discount %', suffixText: '%'),
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('Days',
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              children: List.generate(7, (i) {
+                final selected = _days.contains(i);
+                return FilterChip(
+                  label: Text(_dayLabels[i],
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: selected
+                              ? Colors.white
+                              : Colors.black87)),
+                  selected: selected,
+                  selectedColor: kOrange,
+                  checkmarkColor: Colors.white,
+                  onSelected: (v) => setState(
+                      () => v ? _days.add(i) : _days.remove(i)),
+                );
+              }),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _TimeButton(
+                    label: 'From',
+                    time: _start.format(context),
+                    onTap: () async {
+                      final t = await showTimePicker(
+                          context: context, initialTime: _start);
+                      if (t != null) setState(() => _start = t);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _TimeButton(
+                    label: 'To',
+                    time: _end.format(context),
+                    onTap: () async {
+                      final t = await showTimePicker(
+                          context: context, initialTime: _end);
+                      if (t != null) setState(() => _end = t);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        ElevatedButton(
+          onPressed: () {
+            final pct = double.tryParse(_pctCtrl.text);
+            if (pct == null || pct < 1 || pct > 100) return;
+            if (_days.isEmpty) return;
+            if (_start.hour * 60 + _start.minute >=
+                _end.hour * 60 + _end.minute) {
+              return;
+            }
+            Navigator.pop(context, {
+              'label': _labelCtrl.text.trim().isEmpty
+                  ? 'Deal'
+                  : _labelCtrl.text.trim(),
+              'percent': pct,
+              'days': _days.toList(),
+              'start': _fmt(_start),
+              'end': _fmt(_end),
+            });
+          },
+          style:
+              ElevatedButton.styleFrom(backgroundColor: kOrange),
+          child: const Text('Add'),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimeButton extends StatelessWidget {
+  final String label;
+  final String time;
+  final VoidCallback onTap;
+  const _TimeButton(
+      {required this.label, required this.time, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 11, color: Colors.grey)),
+            const SizedBox(height: 2),
+            Text(time,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 14)),
+          ],
         ),
       ),
     );
@@ -613,8 +1033,8 @@ class _MenuItemFormState extends State<_MenuItemForm> {
 // ─────────────────────────── SETTINGS TAB ──────────────────────────────────
 
 class _SettingsTab extends StatefulWidget {
-  final String shopId;
-  const _SettingsTab({required this.shopId});
+  final String shopCode;
+  const _SettingsTab({required this.shopCode});
 
   @override
   State<_SettingsTab> createState() => _SettingsTabState();
@@ -628,12 +1048,14 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   late TextEditingController _nameCtrl;
   late TextEditingController _descCtrl;
+  late TextEditingController _discountCtrl;
 
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController();
     _descCtrl = TextEditingController();
+    _discountCtrl = TextEditingController();
     _fetch();
   }
 
@@ -641,6 +1063,7 @@ class _SettingsTabState extends State<_SettingsTab> {
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
+    _discountCtrl.dispose();
     super.dispose();
   }
 
@@ -650,15 +1073,17 @@ class _SettingsTabState extends State<_SettingsTab> {
       final data = await _db
           .from('shops')
           .select()
-          .eq('shop_code', widget.shopId)
+          .eq('shop_code', widget.shopCode)
           .single();
       setState(() {
         _shop = data;
         _nameCtrl.text = data['name'] as String? ?? '';
         _descCtrl.text = data['description'] as String? ?? '';
+        _discountCtrl.text =
+            (data['discount_percent'] as num? ?? 0).toStringAsFixed(0);
       });
     } catch (e) {
-      // shop not found — shouldn't happen
+      // shop not found
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -670,7 +1095,7 @@ class _SettingsTabState extends State<_SettingsTab> {
     await _db
         .from('shops')
         .update({'is_active': newVal})
-        .eq('shop_code', widget.shopId);
+        .eq('shop_code', widget.shopCode);
     setState(() => _shop!['is_active'] = newVal);
   }
 
@@ -682,8 +1107,9 @@ class _SettingsTabState extends State<_SettingsTab> {
           .update({
             'name': _nameCtrl.text.trim(),
             'description': _descCtrl.text.trim(),
+            'discount_percent': double.tryParse(_discountCtrl.text) ?? 0,
           })
-          .eq('shop_code', widget.shopId);
+          .eq('shop_code', widget.shopCode);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Saved!')));
@@ -708,7 +1134,6 @@ class _SettingsTabState extends State<_SettingsTab> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        // Open / Closed toggle
         Card(
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12)),
@@ -756,8 +1181,6 @@ class _SettingsTabState extends State<_SettingsTab> {
           ),
         ),
         const SizedBox(height: 20),
-
-        // Shop info
         const Text('Shop Info',
             style:
                 TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -777,6 +1200,18 @@ class _SettingsTabState extends State<_SettingsTab> {
             border: OutlineInputBorder(),
           ),
           maxLines: 3,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _discountCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Shop-wide Discount %',
+            border: OutlineInputBorder(),
+            suffixText: '%',
+            helperText: '0 = no discount',
+          ),
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
         ),
         const SizedBox(height: 20),
         SizedBox(
@@ -800,11 +1235,10 @@ class _SettingsTabState extends State<_SettingsTab> {
                         fontSize: 16, fontWeight: FontWeight.bold)),
           ),
         ),
-
         const SizedBox(height: 20),
         const Divider(),
         const SizedBox(height: 8),
-        Text('Shop ID: ${widget.shopId}',
+        Text('Shop ID: ${widget.shopCode}',
             style: const TextStyle(color: Colors.grey, fontSize: 12)),
         Text('Campus: ${_shop?['campus'] ?? ''}',
             style: const TextStyle(color: Colors.grey, fontSize: 12)),
@@ -895,6 +1329,22 @@ class _OrderCard extends StatelessWidget {
                   .format(order.createdAt.toLocal()),
               style: const TextStyle(color: Colors.grey, fontSize: 12),
             ),
+            if (order.isReservation) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.schedule, size: 13, color: Colors.purple),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Pickup: ${DateFormat('h:mm a').format(order.scheduledFor!.toLocal())}',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.purple,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ],
             Text('Customer: ${order.studentName}',
                 style: const TextStyle(fontSize: 13)),
             const Divider(height: 12),

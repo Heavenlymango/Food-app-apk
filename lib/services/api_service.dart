@@ -51,7 +51,7 @@ class ApiService {
     final data = await _db
         .from('orders')
         .select('*, shops!inner(shop_code), order_items(*)')
-        .eq('shop_id', shopId)
+        .eq('shops.shop_code', shopId)
         .inFilter('status', ['pending', 'preparing', 'ready'])
         .order('ordered_at', ascending: false);
     return (data as List)
@@ -101,28 +101,104 @@ class ApiService {
         .eq('is_read', false);
   }
 
+  // ── Item discount schedules ───────────────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> getItemDiscounts(
+      String menuItemId) async {
+    final data = await _db
+        .from('item_discount_schedules')
+        .select()
+        .eq('menu_item_id', menuItemId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
+  static Future<void> addItemDiscount({
+    required String menuItemId,
+    required String label,
+    required double discountPercent,
+    required List<int> daysOfWeek,
+    required String startTime,
+    required String endTime,
+  }) async {
+    await _db.from('item_discount_schedules').insert({
+      'menu_item_id': menuItemId,
+      'label': label,
+      'discount_percent': discountPercent,
+      'days_of_week': daysOfWeek,
+      'start_time': startTime,
+      'end_time': endTime,
+      'is_active': true,
+    });
+  }
+
+  static Future<void> deleteItemDiscount(String id) async {
+    await _db.from('item_discount_schedules').delete().eq('id', id);
+  }
+
+  static Future<void> toggleItemDiscount(String id,
+      {required bool isActive}) async {
+    await _db
+        .from('item_discount_schedules')
+        .update({'is_active': isActive})
+        .eq('id', id);
+  }
+
   // ── Public menu & shops (direct DB — no auth required) ───────────────────
+  // Fetches menu items with their currently-active time-based discount applied.
   static Future<List<Map<String, dynamic>>> getPublicMenu() async {
     try {
-      final data = await _db
-          .from('menu_items')
-          .select('*, shops!inner(shop_code)')
-          .eq('is_available', true);
-      return (data as List)
-          .map((item) => {
-                'id': item['id'] as String,
-                'name': item['name'] as String,
-                'description': item['description'] as String? ?? '',
-                'price': (item['price'] as num).toDouble(),
-                'category': item['category'] as String? ?? '',
-                'calories': (item['calories'] as num?)?.toInt() ?? 0,
-                'isHealthy': item['is_healthy'] as bool? ?? false,
-                'isSpecial': item['is_special'] as bool? ?? false,
-                'image': item['image_url'] as String? ?? '',
-                'preparationTime': (item['preparation_time'] as num?)?.toInt() ?? 15,
-                'shop': (item['shops'] as Map)['shop_code'] as String,
-              })
-          .toList();
+      final now = DateTime.now();
+      final dow = now.weekday == 7 ? 0 : now.weekday; // Sun=0
+      final timeStr =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+      final results = await Future.wait([
+        _db
+            .from('menu_items')
+            .select(
+                'id, name, description, price, category, calories, is_healthy, is_special, image_url, preparation_time, shops!inner(shop_code, discount_percent)')
+            .eq('is_available', true),
+        _db
+            .from('item_discount_schedules')
+            .select('menu_item_id, discount_percent')
+            .eq('is_active', true)
+            .contains('days_of_week', [dow])
+            .lte('start_time', timeStr)
+            .gte('end_time', timeStr),
+      ]);
+
+      final items = results[0] as List;
+      final schedules = results[1] as List;
+
+      // Build a map: itemId → best active schedule discount
+      final scheduleMap = <String, double>{};
+      for (final s in schedules) {
+        final id = s['menu_item_id'] as String;
+        final pct = (s['discount_percent'] as num).toDouble();
+        if ((scheduleMap[id] ?? 0) < pct) scheduleMap[id] = pct;
+      }
+
+      return items.map((item) {
+        final shop = item['shops'] as Map;
+        final shopCode = shop['shop_code'] as String;
+        final shopPct = (shop['discount_percent'] as num?)?.toDouble() ?? 0.0;
+        final itemPct = scheduleMap[item['id'] as String] ?? 0.0;
+        final effectivePct = itemPct > shopPct ? itemPct : shopPct;
+        return {
+          'id': item['id'] as String,
+          'name': item['name'] as String,
+          'description': item['description'] as String? ?? '',
+          'price': (item['price'] as num).toDouble(),
+          'category': item['category'] as String? ?? '',
+          'calories': (item['calories'] as num?)?.toInt() ?? 0,
+          'isHealthy': item['is_healthy'] as bool? ?? false,
+          'isSpecial': item['is_special'] as bool? ?? false,
+          'image': item['image_url'] as String? ?? '',
+          'preparationTime': (item['preparation_time'] as num?)?.toInt() ?? 15,
+          'shop': shopCode,
+          'discountPercent': effectivePct,
+        };
+      }).toList();
     } catch (_) {
       return [];
     }
@@ -144,6 +220,26 @@ class ApiService {
                 'totalItems': 0,
               })
           .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── Class break schedules (for reservation UI) ────────────────────────────
+  // Returns today's active breaks for the given campus, sorted by start time.
+  static Future<List<Map<String, dynamic>>> getClassBreaks(
+      String campus) async {
+    try {
+      final now = DateTime.now();
+      final dow = now.weekday == 7 ? 0 : now.weekday;
+      final data = await _db
+          .from('class_breaks')
+          .select()
+          .eq('campus', campus)
+          .eq('day_of_week', dow)
+          .eq('is_active', true)
+          .order('break_start');
+      return (data as List).cast<Map<String, dynamic>>();
     } catch (_) {
       return [];
     }
