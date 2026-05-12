@@ -1,9 +1,6 @@
 import 'dart:io';
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
-import 'package:http/http.dart' as http;
 import 'package:tflite_flutter/tflite_flutter.dart';
 import '../config/app_config.dart';
 
@@ -22,21 +19,40 @@ class RecognitionResult {
   }
 }
 
+class RecognitionOutput {
+  final List<RecognitionResult> results;
+  final String modelUsed; // 'mobilenet' | 'yolo_small'
+  final double topConfidence;
+
+  const RecognitionOutput({
+    required this.results,
+    required this.modelUsed,
+    required this.topConfidence,
+  });
+}
+
 class FoodRecognitionService {
   static FoodRecognitionService? _instance;
   factory FoodRecognitionService() => _instance ??= FoodRecognitionService._();
   FoodRecognitionService._();
 
-  Interpreter? _interpreter;
+  Interpreter? _mobileNet;
+  Interpreter? _yoloSmall;
   List<String> _labels = [];
-  bool _modelLoaded = false;
+  bool _mobileNetLoaded = false;
+  bool _yoloLoaded = false;
 
-  bool get isModelLoaded => _modelLoaded;
+  bool get isModelLoaded => _mobileNetLoaded;
 
+  // ── ImageNet normalisation constants ───────────────────────────────────────
+  static const _mean = [0.485, 0.456, 0.406];
+  static const _std  = [0.229, 0.224, 0.225];
+
+  // ── Load MobileNetV3 (called at app start) ─────────────────────────────────
   Future<bool> loadModel() async {
-    if (_modelLoaded) return true;
+    if (_mobileNetLoaded) return true;
     try {
-      _interpreter = await Interpreter.fromAsset(AppConfig.mobilenetModelPath);
+      _mobileNet = await Interpreter.fromAsset(AppConfig.mobilenetModelPath);
       final labelsData =
           await rootBundle.loadString(AppConfig.mobilenetLabelsPath);
       _labels = labelsData
@@ -44,130 +60,192 @@ class FoodRecognitionService {
           .map((l) => l.trim())
           .where((l) => l.isNotEmpty)
           .toList();
-      _modelLoaded = true;
+      _mobileNetLoaded = true;
       return true;
-    } catch (e) {
-      _modelLoaded = false;
+    } catch (_) {
+      _mobileNetLoaded = false;
       return false;
     }
   }
 
-  // ── OFFLINE: MobileNet inference ──────────────────────────────────────────
-  Future<List<RecognitionResult>> recognizeOffline(File imageFile) async {
-    if (!_modelLoaded) {
+  // ── Lazy-load YOLOv11-small (only when needed) ─────────────────────────────
+  Future<bool> _loadYolo() async {
+    if (_yoloLoaded) return true;
+    try {
+      _yoloSmall = await Interpreter.fromAsset(AppConfig.yoloModelPath);
+      _yoloLoaded = true;
+      return true;
+    } catch (_) {
+      _yoloLoaded = false;
+      return false;
+    }
+  }
+
+  // ── Two-stage pipeline ─────────────────────────────────────────────────────
+  Future<RecognitionOutput> recognize(File imageFile) async {
+    if (!_mobileNetLoaded) {
       final loaded = await loadModel();
-      if (!loaded) throw Exception('MobileNet model not loaded');
+      if (!loaded) throw Exception('MobileNetV3 model not loaded');
     }
 
+    final mobileResults = await _runMobileNet(imageFile);
+    final topConf = mobileResults.isNotEmpty ? mobileResults.first.confidence : 0.0;
+
+    if (topConf >= AppConfig.confidenceThreshold) {
+      return RecognitionOutput(
+        results: mobileResults,
+        modelUsed: 'mobilenet',
+        topConfidence: topConf,
+      );
+    }
+
+    // Low confidence — upgrade to YOLOv11-small
+    final yoloLoaded = await _loadYolo();
+    if (!yoloLoaded) {
+      // Fall back to MobileNet results if YOLO fails to load
+      return RecognitionOutput(
+        results: mobileResults,
+        modelUsed: 'mobilenet',
+        topConfidence: topConf,
+      );
+    }
+    final yoloResults = await _runYoloSmall(imageFile);
+    return RecognitionOutput(
+      results: yoloResults.isNotEmpty ? yoloResults : mobileResults,
+      modelUsed: 'yolo_small',
+      topConfidence: yoloResults.isNotEmpty
+          ? yoloResults.first.confidence
+          : topConf,
+    );
+  }
+
+  // ── MobileNetV3 inference (224×224, ImageNet normalisation) ───────────────
+  Future<List<RecognitionResult>> _runMobileNet(File imageFile) async {
     final imageBytes = await imageFile.readAsBytes();
     final rawImage = img.decodeImage(imageBytes);
     if (rawImage == null) throw Exception('Cannot decode image');
 
-    // Resize to 224×224
     final resized = img.copyResize(rawImage,
-        width: AppConfig.modelInputSize, height: AppConfig.modelInputSize);
+        width: AppConfig.mobilenetInputSize,
+        height: AppConfig.mobilenetInputSize);
 
-    // Build input tensor: [1, 224, 224, 3] float32 normalised to [-1, 1]
+    // Build [1, 224, 224, 3] input with ImageNet normalisation
     final input = List.generate(
       1,
       (_) => List.generate(
-        AppConfig.modelInputSize,
+        AppConfig.mobilenetInputSize,
         (y) => List.generate(
-          AppConfig.modelInputSize,
+          AppConfig.mobilenetInputSize,
           (x) {
-            final pixel = resized.getPixel(x, y);
+            final p = resized.getPixel(x, y);
             return [
-              (pixel.r / 127.5) - 1.0,
-              (pixel.g / 127.5) - 1.0,
-              (pixel.b / 127.5) - 1.0,
+              (p.r / 255.0 - _mean[0]) / _std[0],
+              (p.g / 255.0 - _mean[1]) / _std[1],
+              (p.b / 255.0 - _mean[2]) / _std[2],
             ];
           },
         ),
       ),
     );
 
-    final outputShape = _interpreter!.getOutputTensor(0).shape;
-    final numClasses = outputShape.last;
+    final numClasses = _mobileNet!.getOutputTensor(0).shape.last;
     final output = [List<double>.filled(numClasses, 0.0)];
-
-    _interpreter!.run(input, output);
+    _mobileNet!.run(input, output);
 
     final scores = output[0];
-    final indexed = List.generate(scores.length, (i) => MapEntry(i, scores[i]));
+    // Apply softmax
+    final maxScore = scores.reduce((a, b) => a > b ? a : b);
+    final exps = scores.map((v) => _exp(v - maxScore)).toList();
+    final expSum = exps.reduce((a, b) => a + b);
+    final probs = exps.map((e) => e / expSum).toList();
+
+    final indexed = List.generate(probs.length, (i) => MapEntry(i, probs[i]));
     indexed.sort((a, b) => b.value.compareTo(a.value));
 
-    return indexed.take(5).map((e) {
-      final label = e.key < _labels.length ? _labels[e.key] : 'unknown';
-      return RecognitionResult(label: label, confidence: e.value);
-    }).toList();
+    return indexed
+        .take(5)
+        .where((e) => e.value > 0.01)
+        .map((e) {
+          final label = e.key < _labels.length ? _labels[e.key] : 'unknown';
+          return RecognitionResult(label: label, confidence: e.value);
+        })
+        .toList();
   }
 
-  // ── ONLINE: YOLOv8 nano via Roboflow API ──────────────────────────────────
-  Future<List<RecognitionResult>> recognizeOnline(File imageFile) async {
+  // ── YOLOv11-small inference (640×640, 0-1 normalised) ─────────────────────
+  Future<List<RecognitionResult>> _runYoloSmall(File imageFile) async {
     final imageBytes = await imageFile.readAsBytes();
-    final base64Image = base64Encode(imageBytes);
+    final rawImage = img.decodeImage(imageBytes);
+    if (rawImage == null) throw Exception('Cannot decode image');
 
-    final uri = Uri.parse(
-        '${AppConfig.roboflowApiUrl}?api_key=${AppConfig.roboflowApiKey}');
+    final size = AppConfig.yoloInputSize;
+    final resized = img.copyResize(rawImage, width: size, height: size);
 
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: base64Image,
+    // Build [1, 640, 640, 3] input normalised to 0-1
+    final input = List.generate(
+      1,
+      (_) => List.generate(
+        size,
+        (y) => List.generate(
+          size,
+          (x) {
+            final p = resized.getPixel(x, y);
+            return [p.r / 255.0, p.g / 255.0, p.b / 255.0];
+          },
+        ),
+      ),
     );
 
-    if (response.statusCode != 200) {
-      throw Exception('Online recognition failed: ${response.statusCode}');
-    }
+    // YOLOv11-small TFLite output: [1, 8400, 36]  (36 = 4 bbox + 32 classes)
+    final outputShape = _yoloSmall!.getOutputTensor(0).shape; // e.g. [1, 8400, 36]
+    final numAnchors  = outputShape[1];
+    final numCols     = outputShape[2]; // 4 + num_classes
+    final nc          = numCols - 4;
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final predictions = data['predictions'] as List<dynamic>? ?? [];
+    final output = [
+      List.generate(numAnchors, (_) => List<double>.filled(numCols, 0.0))
+    ];
+    _yoloSmall!.run(input, output);
 
-    if (predictions.isEmpty) return [];
-
-    // Aggregate by class label
-    final classScores = <String, double>{};
-    for (final p in predictions) {
-      final pred = p as Map<String, dynamic>;
-      final className = pred['class'] as String;
-      final confidence = (pred['confidence'] as num).toDouble();
-      if (!classScores.containsKey(className) ||
-          classScores[className]! < confidence) {
-        classScores[className] = confidence;
+    // Aggregate max class score across all anchors
+    final classScores = List<double>.filled(nc, 0.0);
+    for (int a = 0; a < numAnchors; a++) {
+      for (int c = 0; c < nc; c++) {
+        final score = output[0][a][4 + c];
+        if (score > classScores[c]) classScores[c] = score;
       }
     }
 
-    final results = classScores.entries
-        .map((e) => RecognitionResult(label: e.key, confidence: e.value))
-        .toList()
-      ..sort((a, b) => b.confidence.compareTo(a.confidence));
+    final indexed = List.generate(nc, (i) => MapEntry(i, classScores[i]));
+    indexed.sort((a, b) => b.value.compareTo(a.value));
 
-    return results.take(5).toList();
+    return indexed
+        .take(5)
+        .where((e) => e.value > 0.10)
+        .map((e) {
+          final label = e.key < _labels.length ? _labels[e.key] : 'unknown';
+          return RecognitionResult(label: label, confidence: e.value);
+        })
+        .toList();
+  }
+
+  double _exp(double x) => x > 20 ? 485165195 : (x < -20 ? 0 : _expTable(x));
+  double _expTable(double x) {
+    double result = 1.0, term = 1.0;
+    for (int i = 1; i <= 20; i++) {
+      term *= x / i;
+      result += term;
+    }
+    return result;
   }
 
   void dispose() {
-    _interpreter?.close();
-    _interpreter = null;
-    _modelLoaded = false;
+    _mobileNet?.close();
+    _yoloSmall?.close();
+    _mobileNet = null;
+    _yoloSmall = null;
+    _mobileNetLoaded = false;
+    _yoloLoaded = false;
     _instance = null;
-  }
-}
-
-// ── Uint8List helper for older API ────────────────────────────────────────
-extension Uint8ListExt on Uint8List {
-  Float32List toFloat32NormalizedRgb(int width, int height) {
-    final decoded = img.decodeImage(this)!;
-    final resized = img.copyResize(decoded, width: width, height: height);
-    final float32 = Float32List(width * height * 3);
-    int idx = 0;
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        final pixel = resized.getPixel(x, y);
-        float32[idx++] = (pixel.r / 127.5) - 1.0;
-        float32[idx++] = (pixel.g / 127.5) - 1.0;
-        float32[idx++] = (pixel.b / 127.5) - 1.0;
-      }
-    }
-    return float32;
   }
 }

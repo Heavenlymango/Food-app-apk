@@ -11,10 +11,18 @@ class AppConfig {
   static const String roboflowApiUrl =
       'https://detect.roboflow.com/food-detection-51us1/1';
 
-  // MobileNet model asset paths
+  // MobileNetV3 model
   static const String mobilenetModelPath = 'assets/models/mobilenet_food.tflite';
   static const String mobilenetLabelsPath = 'assets/models/food_labels.txt';
+  static const int mobilenetInputSize = 224;
 
-  // Offline model input size
-  static const int modelInputSize = 224;
+  // YOLOv11-small model (fallback when MobileNet confidence < threshold)
+  static const String yoloModelPath = 'assets/models/yolo_small.tflite';
+  static const int yoloInputSize = 640;
+
+  // Two-stage confidence threshold: use YOLO if MobileNet is below this
+  static const double confidenceThreshold = 0.80;
+
+  // Kept for compatibility
+  static const int modelInputSize = mobilenetInputSize;
 }
