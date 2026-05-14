@@ -37,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: kBeige,
+      drawer: _buildDrawer(context, auth),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -177,6 +178,106 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDrawer(BuildContext context, AuthProvider auth) {
+    final user = auth.user;
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              color: kOrange,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: Colors.white,
+                    child: Icon(Icons.person, size: 34, color: kOrange),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    user?.name ?? 'Student',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (user?.studentId != null)
+                    Text(
+                      'ID: ${user!.studentId}',
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 13),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Nav items
+            _drawerItem(Icons.restaurant_menu, 'Menu', 0),
+            _drawerItem(Icons.shopping_cart_outlined, 'Cart', 1),
+            _drawerItem(Icons.receipt_long_outlined, 'My Orders', 2),
+            _drawerItem(Icons.lightbulb_outline, 'Tips', 3),
+            _drawerItem(Icons.person_outline, 'Profile', 4),
+            const Divider(height: 32),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                Navigator.pop(context);
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Logout'),
+                    content:
+                        const Text('Are you sure you want to logout?'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Logout',
+                              style: TextStyle(color: Colors.red))),
+                    ],
+                  ),
+                );
+                if (confirm == true && context.mounted) {
+                  context.read<AuthProvider>().logout();
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerItem(IconData icon, String label, int index) {
+    final selected = _selectedIndex == index;
+    return ListTile(
+      leading: Icon(icon, color: selected ? kOrange : Colors.black54),
+      title: Text(
+        label,
+        style: TextStyle(
+          color: selected ? kOrange : Colors.black87,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      tileColor: selected ? kOrange.withValues(alpha: 0.08) : null,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      onTap: () {
+        setState(() => _selectedIndex = index);
+        Navigator.pop(context);
+      },
     );
   }
 

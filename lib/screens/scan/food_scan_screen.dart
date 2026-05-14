@@ -307,6 +307,27 @@ class _ResultsSheetState extends State<_ResultsSheet> {
   bool _reportSubmitting = false;
   bool _reportDone = false;
 
+  Map<String, dynamic>? _nutritionData;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.output.results.isNotEmpty) {
+      _fetchNutrition(widget.output.results.first.label);
+    }
+  }
+
+  Future<void> _fetchNutrition(String foodClass) async {
+    try {
+      final row = await Supabase.instance.client
+          .from('food_nutrition_reference')
+          .select()
+          .eq('food_class', foodClass)
+          .maybeSingle();
+      if (row != null && mounted) setState(() => _nutritionData = row);
+    } catch (_) {}
+  }
+
   static const _allClasses = [
     'amok', 'bai_sach_chrouk', 'banana_pancakes', 'buddha_bowl', 'curry',
     'dumplings', 'french_fries', 'fried_egg', 'fried_rice', 'grilled_corn',
@@ -434,6 +455,45 @@ class _ResultsSheetState extends State<_ResultsSheet> {
               ]),
             ),
             const SizedBox(height: 12),
+
+            // Nutrition card
+            if (_nutritionData != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFf0fdf4),
+                  border: Border.all(color: const Color(0xFF86efac)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.local_fire_department,
+                          size: 14, color: Color(0xFF16a34a)),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${_nutritionData!['display_name'] ?? ''} · per serving (${_nutritionData!['serving_size_g'] ?? '?'}g)',
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600,
+                            color: Color(0xFF166534)),
+                      ),
+                    ]),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _NutrientChip('${_nutritionData!['calories_per_serving'] ?? '?'}', 'kcal'),
+                        _NutrientChip('${_nutritionData!['protein_g'] ?? '?'}g', 'protein'),
+                        _NutrientChip('${_nutritionData!['carbs_g'] ?? '?'}g', 'carbs'),
+                        _NutrientChip('${_nutritionData!['fat_g'] ?? '?'}g', 'fat'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Detected foods
             if (results.isNotEmpty) ...[
@@ -678,6 +738,24 @@ class _ResultsSheetState extends State<_ResultsSheet> {
         ),
       ),
     );
+  }
+}
+
+class _NutrientChip extends StatelessWidget {
+  final String value;
+  final String label;
+  const _NutrientChip(this.value, this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Text(value,
+          style: const TextStyle(
+              fontSize: 14, fontWeight: FontWeight.bold,
+              color: Color(0xFF15803d))),
+      Text(label,
+          style: const TextStyle(fontSize: 10, color: Color(0xFF166534))),
+    ]);
   }
 }
 

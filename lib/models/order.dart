@@ -49,6 +49,8 @@ class Order {
   final String? cancelReason;
   final DateTime createdAt;
   final int estimatedMinutes;
+  // null = immediate order; not null = reserved for a class break
+  final DateTime? scheduledFor;
 
   const Order({
     required this.id,
@@ -61,7 +63,10 @@ class Order {
     this.cancelReason,
     required this.createdAt,
     required this.estimatedMinutes,
+    this.scheduledFor,
   });
+
+  bool get isReservation => scheduledFor != null;
 
   factory Order.fromSupabase(Map<String, dynamic> json) {
     final shopCode = (json['shops'] as Map?)?['shop_code'] as String? ??
@@ -80,6 +85,9 @@ class Order {
       cancelReason: json['cancellation_reason'] as String?,
       createdAt: DateTime.parse(json['ordered_at'] as String),
       estimatedMinutes: 15,
+      scheduledFor: json['scheduled_for'] != null
+          ? DateTime.parse(json['scheduled_for'] as String)
+          : null,
     );
   }
 
@@ -96,12 +104,15 @@ class Order {
         cancelReason: json['cancelReason'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
         estimatedMinutes: json['estimatedMinutes'] as int? ?? 15,
+        scheduledFor: json['scheduledFor'] != null
+            ? DateTime.parse(json['scheduledFor'] as String)
+            : null,
       );
 
   String get statusLabel {
     switch (status) {
       case 'pending':
-        return 'Pending';
+        return isReservation ? 'Reserved' : 'Pending';
       case 'preparing':
         return 'Preparing';
       case 'ready':

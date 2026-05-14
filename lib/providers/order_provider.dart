@@ -33,8 +33,9 @@ class OrderProvider extends ChangeNotifier {
   }
 
   void _startPolling() {
-    final interval =
-        _user?.isSeller == true ? const Duration(seconds: 10) : const Duration(seconds: 5);
+    final interval = _user?.isSeller == true
+        ? const Duration(seconds: 10)
+        : const Duration(seconds: 5);
     _pollTimer = Timer.periodic(interval, (_) => fetchOrders());
   }
 
@@ -55,13 +56,14 @@ class OrderProvider extends ChangeNotifier {
   Future<bool> placeOrder({
     required List<CartItem> cartItems,
     required AppUser student,
+    DateTime? scheduledFor,
   }) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      // Group by shop
+      // Group by shop — each shop gets its own order
       final byShop = <String, List<CartItem>>{};
       for (final item in cartItems) {
         byShop.putIfAbsent(item.menuItem.shop, () => []).add(item);
@@ -69,7 +71,8 @@ class OrderProvider extends ChangeNotifier {
 
       for (final entry in byShop.entries) {
         final shopItems = entry.value;
-        final total = shopItems.fold<double>(0, (s, i) => s + i.total);
+        final total =
+            shopItems.fold<double>(0, (s, i) => s + i.total);
         final estimated = _calculateEstimatedTime(shopItems);
 
         await ApiService.placeOrder({
@@ -85,6 +88,8 @@ class OrderProvider extends ChangeNotifier {
               .toList(),
           'total': total,
           'estimatedMinutes': estimated,
+          if (scheduledFor != null)
+            'scheduledFor': scheduledFor.toIso8601String(),
         });
       }
 
@@ -117,8 +122,11 @@ class OrderProvider extends ChangeNotifier {
       base += item.menuItem.preparationTime;
     }
     final totalQty = items.fold(0, (s, i) => s + i.quantity);
-    if (totalQty > 6) base += 4;
-    else if (totalQty > 3) base += 2;
+    if (totalQty > 6) {
+      base += 4;
+    } else if (totalQty > 3) {
+      base += 2;
+    }
 
     final hour = DateTime.now().hour;
     final minute = DateTime.now().minute;

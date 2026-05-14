@@ -31,7 +31,7 @@ class MenuItemCard extends StatelessWidget {
         onTap: () => _showDetail(context),
         child: Row(
           children: [
-            // Image
+            // Image + discount badge
             Stack(
               children: [
                 ClipRRect(
@@ -51,7 +51,7 @@ class MenuItemCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (item.isSpecial)
+                if (item.hasDiscount)
                   Positioned(
                     top: 0,
                     left: 0,
@@ -65,8 +65,9 @@ class MenuItemCard extends StatelessWidget {
                           bottomRight: Radius.circular(8),
                         ),
                       ),
-                      child: const Text('-30%',
-                          style: TextStyle(
+                      child: Text(
+                          '-${item.discountPercent.toStringAsFixed(0)}%',
+                          style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
                               fontWeight: FontWeight.bold)),
@@ -143,7 +144,7 @@ class MenuItemCard extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            if (item.isSpecial) ...[
+                            if (item.hasDiscount) ...[
                               Text(
                                 '\$${item.price.toStringAsFixed(2)}',
                                 style: const TextStyle(
@@ -257,28 +258,32 @@ class MenuItemCard extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                if (item.isHealthy)
-                  _Badge(label: 'Healthy', color: kGreen),
-                if (item.isSpecial) ...[
+                if (item.isHealthy) _Badge(label: 'Healthy', color: kGreen),
+                if (item.hasDiscount) ...[
                   const SizedBox(width: 8),
-                  _Badge(label: '30% off today', color: kOrange),
+                  _Badge(
+                      label:
+                          '${item.discountPercent.toStringAsFixed(0)}% off now',
+                      color: kOrange),
                 ],
                 const Spacer(),
                 Icon(Icons.local_fire_department,
                     size: 14, color: Colors.orange.shade400),
                 Text(' ${item.calories} cal',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                    style: const TextStyle(
+                        color: Colors.grey, fontSize: 12)),
                 const SizedBox(width: 8),
                 const Icon(Icons.access_time,
                     size: 14, color: Colors.grey),
                 Text(' ${item.preparationTime} min',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                    style: const TextStyle(
+                        color: Colors.grey, fontSize: 12)),
               ],
             ),
             const SizedBox(height: 16),
             Row(
               children: [
-                if (item.isSpecial) ...[
+                if (item.hasDiscount) ...[
                   Text(
                     '\$${item.price.toStringAsFixed(2)}',
                     style: const TextStyle(

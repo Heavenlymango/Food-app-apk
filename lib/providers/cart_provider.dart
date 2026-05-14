@@ -4,10 +4,13 @@ import '../models/menu_item.dart';
 
 class CartProvider extends ChangeNotifier {
   final List<CartItem> _items = [];
+  DateTime? _scheduledFor;
 
   List<CartItem> get items => List.unmodifiable(_items);
   int get itemCount => _items.fold(0, (sum, i) => sum + i.quantity);
   double get total => _items.fold(0.0, (sum, i) => sum + i.total);
+  DateTime? get scheduledFor => _scheduledFor;
+  bool get isReservation => _scheduledFor != null;
 
   bool contains(String menuItemId) =>
       _items.any((i) => i.menuItem.id == menuItemId);
@@ -38,8 +41,14 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setScheduledFor(DateTime? time) {
+    _scheduledFor = time;
+    notifyListeners();
+  }
+
   void clear() {
     _items.clear();
+    _scheduledFor = null;
     notifyListeners();
   }
 

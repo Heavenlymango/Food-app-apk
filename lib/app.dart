@@ -5,6 +5,7 @@ import 'screens/splash_screen.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/seller/seller_dashboard_screen.dart';
+import 'screens/admin/admin_dashboard_screen.dart';
 
 const kOrange = Color(0xFFEA580C);
 const kBeige = Color(0xFFFFF8F0);
@@ -75,6 +76,7 @@ class AppNavigator extends StatelessWidget {
       builder: (context, auth, _) {
         if (auth.isLoading) return const SplashScreen();
         if (!auth.isLoggedIn) return const AuthScreen();
+        if (auth.user!.isAdmin) return const AdminDashboardScreen();
         if (auth.user!.isSeller) return const SellerDashboardScreen();
         return const HomeScreen();
       },

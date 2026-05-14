@@ -10,6 +10,9 @@ class MenuItem {
   final String image;
   final int preparationTime;
   final String shop;
+  // Active time-based discount percent (0 = no current discount).
+  // Computed at fetch time from item_discount_schedules.
+  final double discountPercent;
 
   const MenuItem({
     required this.id,
@@ -23,9 +26,13 @@ class MenuItem {
     required this.image,
     required this.preparationTime,
     required this.shop,
+    this.discountPercent = 0,
   });
 
-  double get discountedPrice => isSpecial ? price * 0.7 : price;
+  bool get hasDiscount => discountPercent > 0;
+
+  double get discountedPrice =>
+      hasDiscount ? price * (1 - discountPercent / 100) : price;
 
   factory MenuItem.fromJson(Map<String, dynamic> json) => MenuItem(
         id: json['id'] as String,
@@ -39,5 +46,7 @@ class MenuItem {
         image: json['image'] as String,
         preparationTime: json['preparationTime'] as int,
         shop: json['shop'] as String,
+        discountPercent:
+            (json['discountPercent'] as num?)?.toDouble() ?? 0,
       );
 }
