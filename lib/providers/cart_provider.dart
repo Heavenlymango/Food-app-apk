@@ -9,6 +9,7 @@ class CartProvider extends ChangeNotifier {
   List<CartItem> get items => List.unmodifiable(_items);
   int get itemCount => _items.fold(0, (sum, i) => sum + i.quantity);
   double get total => _items.fold(0.0, (sum, i) => sum + i.total);
+  int get totalCalories => _items.fold(0, (sum, i) => sum + i.menuItem.calories * i.quantity);
   DateTime? get scheduledFor => _scheduledFor;
   bool get isReservation => _scheduledFor != null;
 

@@ -27,6 +27,7 @@ class MenuProvider extends ChangeNotifier {
   bool get showHealthyOnly => _showHealthyOnly;
   bool get showSpecialsOnly => _showSpecialsOnly;
 
+  List<MenuItem> get allItems => _allItems;
   List<Shop> get allShops => _allShops;
   List<String> get campuses => ['All', 'RUPP', 'IFL'];
 

@@ -4,7 +4,16 @@ import 'package:intl/intl.dart';
 import '../../app.dart';
 import '../../providers/order_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/menu_provider.dart';
 import '../../models/order.dart';
+
+int _calcOrderCalories(Order order, MenuProvider menu) {
+  return order.items.fold<int>(0, (sum, item) {
+    final found = menu.allItems.where((m) => m.id == item.menuItemId);
+    final kcal = found.isEmpty ? 500 : found.first.calories;
+    return sum + kcal * item.quantity;
+  });
+}
 
 class OrdersScreen extends StatelessWidget {
   const OrdersScreen({super.key});
@@ -97,8 +106,10 @@ class _OrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final menu = context.watch<MenuProvider>();
     final isSeller = auth.user?.isSeller == true;
     final color = _statusColor();
+    final orderKcal = _calcOrderCalories(order, menu);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -282,12 +293,25 @@ class _OrderCard extends StatelessWidget {
 
                 const Divider(height: 20),
 
-                // Total
+                // Total + calories
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Total',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Total',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        Row(children: [
+                          Icon(Icons.local_fire_department,
+                              size: 12,
+                              color: Colors.orange.shade400),
+                          Text(' $orderKcal kcal',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey)),
+                        ]),
+                      ],
+                    ),
                     Text(
                       '\$${order.total.toStringAsFixed(2)}',
                       style: const TextStyle(

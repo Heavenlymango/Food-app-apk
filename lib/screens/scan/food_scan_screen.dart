@@ -141,6 +141,7 @@ class _FoodScanScreenState extends State<FoodScanScreen>
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
+        fit: StackFit.expand,
         children: [
           // Camera preview
           if (_cameraReady && _cameraCtrl != null)
@@ -544,7 +545,7 @@ class _ResultsSheetState extends State<_ResultsSheet> {
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(item.image, width: 52, height: 52,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, _) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             width: 52, height: 52,
                             color: Colors.grey.shade200,
                             child: const Icon(Icons.fastfood),

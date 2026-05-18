@@ -7,6 +7,110 @@ import '../../providers/order_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 
+void showCaloriePreview(BuildContext context, CartProvider cart) {
+  const int avgMeal = 600;
+  const int dailyGoal = 2000;
+  final int total = cart.totalCalories;
+  final double ratio = total / avgMeal;
+
+  final String message;
+  final Color color;
+  if (total == 0) {
+    message = 'Add items to see calorie info.';
+    color = Colors.grey;
+  } else if (total < 400) {
+    message = 'Light meal — consider adding a protein-rich side to stay energized.';
+    color = Colors.blue;
+  } else if (total <= 700) {
+    message = 'Great portion! This fits well within a healthy meal range.';
+    color = kGreen;
+  } else if (total <= 900) {
+    message = 'Slightly above average — consider skipping a snack later.';
+    color = Colors.orange;
+  } else {
+    message = 'Heavy meal. Try to eat lighter at your next meal to balance out.';
+    color = Colors.red;
+  }
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (_) => Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Calorie Preview',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          const Text('How does your order compare?',
+              style: TextStyle(color: Colors.grey, fontSize: 13)),
+          const SizedBox(height: 20),
+          _PreviewBar(label: 'Your order', kcal: total, maxKcal: dailyGoal, color: kOrange),
+          const SizedBox(height: 10),
+          _PreviewBar(label: 'Avg meal', kcal: avgMeal, maxKcal: dailyGoal, color: Colors.grey.shade400),
+          const SizedBox(height: 10),
+          _PreviewBar(label: 'Daily goal', kcal: dailyGoal, maxKcal: dailyGoal, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+            ),
+            child: Row(children: [
+              Icon(Icons.info_outline, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(child: Text(message,
+                  style: TextStyle(fontSize: 13, color: color))),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              'Your order is ${ratio.toStringAsFixed(1)}× the average meal',
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _PreviewBar extends StatelessWidget {
+  final String label;
+  final int kcal;
+  final int maxKcal;
+  final Color color;
+  const _PreviewBar({required this.label, required this.kcal, required this.maxKcal, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      SizedBox(width: 72, child: Text(label, style: const TextStyle(fontSize: 12))),
+      Expanded(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: (kcal / maxKcal).clamp(0.0, 1.0),
+            minHeight: 10,
+            backgroundColor: Colors.grey.shade100,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Text('$kcal kcal',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+    ]);
+  }
+}
+
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
 
@@ -126,7 +230,7 @@ class _CartScreenState extends State<CartScreen> {
                         width: 76,
                         height: 76,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, e, st) => Container(
+                        errorBuilder: (_, _, _) => Container(
                           width: 76,
                           height: 76,
                           color: Colors.grey.shade100,
@@ -146,9 +250,20 @@ class _CartScreenState extends State<CartScreen> {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 14)),
-                            Text(item.menuItem.shop,
+                            Row(children: [
+                              Text(item.menuItem.shop,
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.grey)),
+                              const SizedBox(width: 8),
+                              Icon(Icons.local_fire_department,
+                                  size: 12,
+                                  color: Colors.orange.shade400),
+                              Text(
+                                ' ${item.menuItem.calories * item.quantity} kcal',
                                 style: const TextStyle(
-                                    fontSize: 12, color: Colors.grey)),
+                                    fontSize: 11, color: Colors.grey),
+                              ),
+                            ]),
                             const SizedBox(height: 6),
                             Row(
                               mainAxisAlignment:
@@ -379,6 +494,33 @@ class _CartScreenState extends State<CartScreen> {
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         color: kOrange),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(children: [
+                    Icon(Icons.local_fire_department,
+                        size: 14, color: Colors.orange.shade400),
+                    Text(
+                      ' ${cart.totalCalories} kcal total',
+                      style: const TextStyle(
+                          fontSize: 13, color: Colors.black54),
+                    ),
+                  ]),
+                  TextButton.icon(
+                    onPressed: () => showCaloriePreview(context, cart),
+                    icon: const Icon(Icons.bar_chart, size: 14),
+                    label: const Text('Preview', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: kGreen,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
                 ],
               ),

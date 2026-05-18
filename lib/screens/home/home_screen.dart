@@ -7,8 +7,10 @@ import '../../providers/notification_provider.dart';
 import '../menu/menu_screen.dart';
 import '../cart/cart_screen.dart';
 import '../orders/orders_screen.dart';
-import '../tips/tips_screen.dart';
 import '../profile/profile_screen.dart';
+import '../tips/tips_screen.dart';
+import '../scan/food_scan_screen.dart';
+import '../dashboard/dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,15 +20,31 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // 0=Menu, 1=Cart, 2=Orders, 3=Dashboard  (Scan is a modal push, not a tab)
   int _selectedIndex = 0;
 
   final List<Widget> _screens = const [
     MenuScreen(),
     CartScreen(),
     OrdersScreen(),
-    TipsScreen(),
-    ProfileScreen(),
+    DashboardScreen(),
   ];
+
+  // Nav bar has 5 items: Menu(0), Cart(1), Scan(2), Orders(3), Dashboard(4)
+  // Scan pushes a modal; the other 4 map to _screens indices 0-3.
+  int get _navBarIndex => _selectedIndex < 2 ? _selectedIndex : _selectedIndex + 1;
+
+  void _handleNavTap(int navIndex) {
+    if (navIndex == 2) {
+      Navigator.of(context).push(MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const FoodScanScreen(),
+      ));
+      return;
+    }
+    final screenIndex = navIndex < 2 ? navIndex : navIndex - 1;
+    setState(() => _selectedIndex = screenIndex);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +62,6 @@ class _HomeScreenState extends State<HomeScreen> {
         titleSpacing: 16,
         title: Row(
           children: [
-            // Mini logo
             Container(
               width: 32,
               height: 32,
@@ -66,7 +83,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
-          // Notification bell
           Stack(
             children: [
               IconButton(
@@ -96,7 +112,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
-          // Logout
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.black87),
             tooltip: 'Logout',
@@ -132,8 +147,8 @@ class _HomeScreenState extends State<HomeScreen> {
           border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
         ),
         child: BottomNavigationBar(
-          currentIndex: _selectedIndex,
-          onTap: (i) => setState(() => _selectedIndex = i),
+          currentIndex: _navBarIndex,
+          onTap: _handleNavTap,
           type: BottomNavigationBarType.fixed,
           backgroundColor: Colors.white,
           selectedItemColor: kOrange,
@@ -160,20 +175,35 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               label: 'Cart',
             ),
+            BottomNavigationBarItem(
+              icon: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: kOrange,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: kOrange.withValues(alpha: 0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.camera_alt,
+                    color: Colors.white, size: 22),
+              ),
+              label: 'Scan',
+            ),
             const BottomNavigationBarItem(
               icon: Icon(Icons.receipt_long_outlined),
               activeIcon: Icon(Icons.receipt_long),
               label: 'Orders',
             ),
             const BottomNavigationBarItem(
-              icon: Icon(Icons.lightbulb_outline),
-              activeIcon: Icon(Icons.lightbulb),
-              label: 'Tips',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Profile',
+              icon: Icon(Icons.bar_chart_outlined),
+              activeIcon: Icon(Icons.bar_chart),
+              label: 'Dashboard',
             ),
           ],
         ),
@@ -188,7 +218,6 @@ class _HomeScreenState extends State<HomeScreen> {
       child: SafeArea(
         child: Column(
           children: [
-            // Header
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -220,13 +249,32 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            // Nav items
             _drawerItem(Icons.restaurant_menu, 'Menu', 0),
             _drawerItem(Icons.shopping_cart_outlined, 'Cart', 1),
             _drawerItem(Icons.receipt_long_outlined, 'My Orders', 2),
-            _drawerItem(Icons.lightbulb_outline, 'Tips', 3),
-            _drawerItem(Icons.person_outline, 'Profile', 4),
-            const Divider(height: 32),
+            _drawerItem(Icons.bar_chart_outlined, 'Dashboard', 3),
+            const Divider(height: 24),
+            ListTile(
+              leading: const Icon(Icons.lightbulb_outline, color: Colors.black54),
+              title: const Text('Tips & Advice'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const TipsScreen(),
+                ));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_outline, color: Colors.black54),
+              title: const Text('Profile'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const ProfileScreen(),
+                ));
+              },
+            ),
+            const Divider(height: 8),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text('Logout',
@@ -261,8 +309,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _drawerItem(IconData icon, String label, int index) {
-    final selected = _selectedIndex == index;
+  Widget _drawerItem(IconData icon, String label, int screenIndex) {
+    final selected = _selectedIndex == screenIndex;
     return ListTile(
       leading: Icon(icon, color: selected ? kOrange : Colors.black54),
       title: Text(
@@ -275,7 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
       tileColor: selected ? kOrange.withValues(alpha: 0.08) : null,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       onTap: () {
-        setState(() => _selectedIndex = index);
+        setState(() => _selectedIndex = screenIndex);
         Navigator.pop(context);
       },
     );
