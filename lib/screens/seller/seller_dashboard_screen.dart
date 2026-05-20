@@ -631,6 +631,7 @@ class _MenuItemFormState extends State<_MenuItemForm> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
+                      // ignore: deprecated_member_use
                       value: _category,
                       decoration:
                           const InputDecoration(labelText: 'Category'),

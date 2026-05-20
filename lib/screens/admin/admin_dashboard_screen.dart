@@ -150,6 +150,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
+              final auth = context.read<AuthProvider>();
               final ok = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
@@ -164,7 +165,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   ],
                 ),
               );
-              if (ok == true && mounted) context.read<AuthProvider>().logout();
+              if (ok == true && mounted) auth.logout();
             },
           ),
         ],
@@ -270,6 +271,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               _field(password, 'Password', obscure: true),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
                 value: role,
                 decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
                 items: const [
@@ -347,6 +349,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               _field(shopCode, 'Shop Code (e.g. A3)'),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
                 value: campus,
                 decoration: const InputDecoration(labelText: 'Campus', border: OutlineInputBorder()),
                 items: const [
@@ -433,6 +436,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
                 value: campus,
                 decoration: const InputDecoration(labelText: 'Campus', border: OutlineInputBorder()),
                 items: const [
@@ -443,6 +447,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<int>(
+                // ignore: deprecated_member_use
                 value: dow,
                 decoration: const InputDecoration(labelText: 'Day of Week', border: OutlineInputBorder()),
                 items: List.generate(7, (i) => DropdownMenuItem(value: i, child: Text(days[i]))),
@@ -971,7 +976,7 @@ class _ClassBreaksTab extends StatelessWidget {
                         Switch(
                           value: isActive,
                           onChanged: (v) => onToggle(b['id'] as String, isActive),
-                          activeColor: kOrange,
+                          activeThumbColor: kOrange,
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete, size: 18, color: Colors.red),
@@ -1148,7 +1153,7 @@ class _SwitchTile extends StatelessWidget {
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
       value: value,
       onChanged: onChanged,
-      activeColor: kOrange,
+      activeThumbColor: kOrange,
       dense: true,
     );
   }

@@ -387,7 +387,7 @@ class _CartScreenState extends State<CartScreen> {
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: _upcomingBreaks.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
                       itemBuilder: (_, i) {
                         final b = _upcomingBreaks[i];
                         final start = _parseBreakTime(
