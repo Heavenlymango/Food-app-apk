@@ -374,84 +374,149 @@ class _CartScreenState extends State<CartScreen> {
                     child: Center(
                         child: CircularProgressIndicator(strokeWidth: 2)),
                   )
-                else if (_upcomingBreaks.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      'No upcoming breaks today. Check back later or order now.',
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                  )
                 else
                   SizedBox(
-                    height: 72,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _upcomingBreaks.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 8),
-                      itemBuilder: (_, i) {
-                        final b = _upcomingBreaks[i];
-                        final start = _parseBreakTime(
-                            b['break_start'] as String);
-                        final end = _parseBreakTime(
-                            b['break_end'] as String);
-                        final isSelected = cart.scheduledFor != null &&
-                            start != null &&
-                            cart.scheduledFor!.hour == start.hour &&
-                            cart.scheduledFor!.minute == start.minute;
-                        final label = b['break_label'] as String? ?? 'Break';
-                        final className =
-                            b['class_name'] as String? ?? '';
-                        final timeStr = start != null && end != null
-                            ? '${DateFormat('h:mm a').format(start)} – ${DateFormat('h:mm a').format(end)}'
-                            : '';
+                  height: 72,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _upcomingBreaks.length + 1,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, i) {
+                      // Custom time chip (always last)
+                      if (i == _upcomingBreaks.length) {
+                        final isCustomSelected = cart.scheduledFor != null &&
+                            !_upcomingBreaks.any((b) {
+                              final s = _parseBreakTime(
+                                  b['break_start'] as String);
+                              return s != null &&
+                                  cart.scheduledFor!.hour == s.hour &&
+                                  cart.scheduledFor!.minute == s.minute;
+                            });
                         return GestureDetector(
-                          onTap: () => _selectBreak(b, cart),
+                          onTap: () async {
+                            final picked = await showTimePicker(
+                              context: context,
+                              initialTime: cart.scheduledFor != null
+                                  ? TimeOfDay.fromDateTime(
+                                      cart.scheduledFor!)
+                                  : TimeOfDay.now(),
+                            );
+                            if (picked != null) {
+                              final now = DateTime.now();
+                              cart.setScheduledFor(DateTime(
+                                now.year,
+                                now.month,
+                                now.day,
+                                picked.hour,
+                                picked.minute,
+                              ));
+                            }
+                          },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 150),
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 8),
                             decoration: BoxDecoration(
-                              color: isSelected
+                              color: isCustomSelected
                                   ? Colors.purple
                                   : Colors.white,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                  color: isSelected
-                                      ? Colors.purple
-                                      : Colors.grey.shade300),
+                                color: isCustomSelected
+                                    ? Colors.purple
+                                    : Colors.grey.shade300,
+                              ),
                             ),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(label,
+                                Text('Custom',
                                     style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
-                                        color: isSelected
+                                        color: isCustomSelected
                                             ? Colors.white
                                             : Colors.black87)),
-                                Text(className,
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color: isSelected
-                                            ? Colors.white70
-                                            : Colors.grey)),
-                                Text(timeStr,
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color: isSelected
-                                            ? Colors.white70
-                                            : Colors.grey)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  isCustomSelected
+                                      ? DateFormat('h:mm a')
+                                          .format(cart.scheduledFor!)
+                                      : 'Pick a time',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: isCustomSelected
+                                          ? Colors.white70
+                                          : Colors.grey),
+                                ),
                               ],
                             ),
                           ),
                         );
-                      },
-                    ),
+                      }
+                      final b = _upcomingBreaks[i];
+                      final start = _parseBreakTime(
+                          b['break_start'] as String);
+                      final end = _parseBreakTime(
+                          b['break_end'] as String);
+                      final isSelected = cart.scheduledFor != null &&
+                          start != null &&
+                          cart.scheduledFor!.hour == start.hour &&
+                          cart.scheduledFor!.minute == start.minute;
+                      final label = b['break_label'] as String? ?? 'Break';
+                      final className =
+                          b['class_name'] as String? ?? '';
+                      final timeStr = start != null && end != null
+                          ? '${DateFormat('h:mm a').format(start)} – ${DateFormat('h:mm a').format(end)}'
+                          : '';
+                      return GestureDetector(
+                        onTap: () => _selectBreak(b, cart),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.purple
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: isSelected
+                                    ? Colors.purple
+                                    : Colors.grey.shade300),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(label,
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : Colors.black87)),
+                              Text(className,
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: isSelected
+                                          ? Colors.white70
+                                          : Colors.grey)),
+                              Text(timeStr,
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: isSelected
+                                          ? Colors.white70
+                                          : Colors.grey)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
+                ),
                 if (cart.scheduledFor != null) ...[
                   const SizedBox(height: 8),
                   Row(
@@ -526,9 +591,8 @@ class _CartScreenState extends State<CartScreen> {
                 ],
               ),
               const SizedBox(height: 10),
-              // ── Service type selector ──────────────────────────────────
-              if (!_reserveMode)
-                Container(
+              // ── Service type selector (always shown) ───────────────────
+              Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
@@ -573,11 +637,7 @@ class _CartScreenState extends State<CartScreen> {
                           child: CircularProgressIndicator(
                               color: Colors.white, strokeWidth: 2))
                       : Text(
-                          _reserveMode && cart.scheduledFor != null
-                              ? 'Reserve Pickup'
-                              : _serviceType == 'dine-in'
-                                  ? 'Place Dine-In Order'
-                                  : 'Place Pickup Order',
+                          _buildOrderButtonLabel(cart),
                           style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold)),
@@ -588,6 +648,18 @@ class _CartScreenState extends State<CartScreen> {
         ),
       ],
     );
+  }
+
+  String _buildOrderButtonLabel(CartProvider cart) {
+    final typeLabel = _serviceType == 'dine-in' ? 'Dine-In' : 'Pickup';
+    if (_reserveMode && cart.scheduledFor != null) {
+      final t = cart.scheduledFor!;
+      final h = t.hour == 0 ? 12 : (t.hour > 12 ? t.hour - 12 : t.hour);
+      final m = t.minute.toString().padLeft(2, '0');
+      final suffix = t.hour >= 12 ? 'PM' : 'AM';
+      return 'Reserve $typeLabel at $h:$m $suffix';
+    }
+    return _serviceType == 'dine-in' ? 'Place Dine-In Order' : 'Place Pickup Order';
   }
 
   Future<void> _placeOrder(
@@ -611,7 +683,7 @@ class _CartScreenState extends State<CartScreen> {
       cartItems: cart.items.toList(),
       student: auth.user!,
       scheduledFor: cart.scheduledFor,
-      serviceType: _reserveMode ? 'pickup' : _serviceType,
+      serviceType: _serviceType,
     );
     if (success && context.mounted) {
       cart.clear();
