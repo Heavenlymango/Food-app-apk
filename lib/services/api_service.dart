@@ -103,8 +103,8 @@ class ApiService {
     final body = <String, dynamic>{
       'orderId': orderId,
       'status': status,
-      if (shopId != null) 'shopId': shopId,
-      if (cancelReason != null) 'cancellationReason': cancelReason,
+      'shopId': ?shopId,
+      'cancellationReason': ?cancelReason,
     };
     await _post('/api/seller/update-order', body);
   }
