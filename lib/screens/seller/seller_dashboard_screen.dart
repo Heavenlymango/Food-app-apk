@@ -223,14 +223,16 @@ class _MenuTabState extends State<_MenuTab> {
     _resolveShopThenFetch();
   }
 
-  // shop_code (e.g. "A1") → shop UUID — needed because menu_items.shop_id is UUID
+  // shopCode may be a UUID (from user_metadata.shop_id) or a shop_code like "A1"
   Future<void> _resolveShopThenFetch() async {
     setState(() => _loading = true);
     try {
+      final isUuid = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-').hasMatch(widget.shopCode);
+      final col = isUuid ? 'id' : 'shop_code';
       final shop = await _db
           .from('shops')
           .select('id')
-          .eq('shop_code', widget.shopCode)
+          .eq(col, widget.shopCode)
           .single();
       _shopUuid = shop['id'] as String;
     } catch (e) {
@@ -1068,13 +1070,17 @@ class _SettingsTabState extends State<_SettingsTab> {
     super.dispose();
   }
 
+  bool get _isUuid =>
+      RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-').hasMatch(widget.shopCode);
+
   Future<void> _fetch() async {
     setState(() => _loading = true);
     try {
+      final col = _isUuid ? 'id' : 'shop_code';
       final data = await _db
           .from('shops')
           .select()
-          .eq('shop_code', widget.shopCode)
+          .eq(col, widget.shopCode)
           .single();
       setState(() {
         _shop = data;
@@ -1093,16 +1099,18 @@ class _SettingsTabState extends State<_SettingsTab> {
   Future<void> _toggleOpen() async {
     if (_shop == null) return;
     final newVal = !(_shop!['is_active'] as bool? ?? true);
+    final col = _isUuid ? 'id' : 'shop_code';
     await _db
         .from('shops')
         .update({'is_active': newVal})
-        .eq('shop_code', widget.shopCode);
+        .eq(col, widget.shopCode);
     setState(() => _shop!['is_active'] = newVal);
   }
 
   Future<void> _saveInfo() async {
     setState(() => _saving = true);
     try {
+      final col = _isUuid ? 'id' : 'shop_code';
       await _db
           .from('shops')
           .update({
@@ -1110,7 +1118,7 @@ class _SettingsTabState extends State<_SettingsTab> {
             'description': _descCtrl.text.trim(),
             'discount_percent': double.tryParse(_discountCtrl.text) ?? 0,
           })
-          .eq('shop_code', widget.shopCode);
+          .eq(col, widget.shopCode);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Saved!')));

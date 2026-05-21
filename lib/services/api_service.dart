@@ -30,6 +30,18 @@ class ApiService {
     return data;
   }
 
+  static Future<Map<String, dynamic>> _get(String path) async {
+    final res = await http.get(
+      Uri.parse('${AppConfig.apiBaseUrl}$path'),
+      headers: await _headers(),
+    );
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode >= 400) {
+      throw ApiException(data['error'] as String? ?? 'Request failed');
+    }
+    return data;
+  }
+
   // ── Orders ────────────────────────────────────────────────────────────────
   static Future<List<Order>> getStudentOrders() async {
     final userId = _db.auth.currentUser?.id;
@@ -48,15 +60,36 @@ class ApiService {
   static Future<List<Order>> getSellerOrders() async {
     final shopId = _db.auth.currentUser?.userMetadata?['shop_id'] as String?;
     if (shopId == null) return [];
-    final data = await _db
-        .from('orders')
-        .select('*, shops!inner(shop_code), order_items(*)')
-        .eq('shops.shop_code', shopId)
-        .inFilter('status', ['pending', 'preparing', 'ready'])
-        .order('ordered_at', ascending: false);
-    return (data as List)
-        .map((e) => Order.fromSupabase(e as Map<String, dynamic>))
-        .toList();
+    final data = await _get('/api/seller/orders?shopId=$shopId');
+    final rawOrders = data['orders'] as List<dynamic>? ?? [];
+    return rawOrders.map((o) {
+      final map = o as Map<String, dynamic>;
+      final items = (map['items'] as List<dynamic>? ?? []).map((item) {
+        final i = item as Map<String, dynamic>;
+        return OrderItem(
+          menuItemId: (i['id'] as String?) ?? '',
+          name: i['name'] as String,
+          price: (i['price'] as num).toDouble(),
+          quantity: i['quantity'] as int,
+          shop: (i['shop'] as String?) ?? '',
+        );
+      }).toList();
+      return Order(
+        id: map['id'] as String,
+        studentId: map['studentId'] as String? ?? '',
+        studentName: map['studentName'] as String? ?? '',
+        shopId: shopId,
+        items: items,
+        total: (map['total'] as num).toDouble(),
+        status: map['status'] as String,
+        cancelReason: map['cancellationReason'] as String?,
+        createdAt: DateTime.parse(map['orderTime'] as String),
+        estimatedMinutes: 15,
+        scheduledFor: map['scheduledFor'] != null
+            ? DateTime.parse(map['scheduledFor'] as String)
+            : null,
+      );
+    }).toList();
   }
 
   static Future<Map<String, dynamic>> placeOrder(
@@ -66,8 +99,13 @@ class ApiService {
 
   static Future<void> updateOrderStatus(String orderId, String status,
       {String? cancelReason}) async {
-    final body = <String, dynamic>{'orderId': orderId, 'status': status};
-    if (cancelReason != null) body['cancelReason'] = cancelReason;
+    final shopId = _db.auth.currentUser?.userMetadata?['shop_id'] as String?;
+    final body = <String, dynamic>{
+      'orderId': orderId,
+      'status': status,
+      if (shopId != null) 'shopId': shopId,
+      if (cancelReason != null) 'cancellationReason': cancelReason,
+    };
     await _post('/api/seller/update-order', body);
   }
 
