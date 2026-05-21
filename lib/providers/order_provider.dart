@@ -57,6 +57,7 @@ class OrderProvider extends ChangeNotifier {
     required List<CartItem> cartItems,
     required AppUser student,
     DateTime? scheduledFor,
+    String serviceType = 'pickup',
   }) async {
     _isLoading = true;
     _error = null;
@@ -77,6 +78,7 @@ class OrderProvider extends ChangeNotifier {
 
         await ApiService.placeOrder({
           'shopId': entry.key,
+          'serviceType': serviceType,
           'items': shopItems
               .map((i) => {
                     'menuItemId': i.menuItem.id,
@@ -88,8 +90,7 @@ class OrderProvider extends ChangeNotifier {
               .toList(),
           'total': total,
           'estimatedMinutes': estimated,
-          if (scheduledFor != null)
-            'scheduledFor': scheduledFor.toIso8601String(),
+          'scheduledFor': ?scheduledFor?.toIso8601String(),
         });
       }
 

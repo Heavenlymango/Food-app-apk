@@ -120,6 +120,7 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   bool _reserveMode = false;
+  String _serviceType = 'pickup';
   List<Map<String, dynamic>> _breaks = [];
   bool _loadingBreaks = false;
 
@@ -525,6 +526,32 @@ class _CartScreenState extends State<CartScreen> {
                 ],
               ),
               const SizedBox(height: 10),
+              // ── Service type selector ──────────────────────────────────
+              if (!_reserveMode)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      _ServiceTypeBtn(
+                        label: 'Pickup',
+                        icon: Icons.shopping_bag_outlined,
+                        selected: _serviceType == 'pickup',
+                        onTap: () => setState(() => _serviceType = 'pickup'),
+                      ),
+                      _ServiceTypeBtn(
+                        label: 'Dine-In',
+                        icon: Icons.restaurant_outlined,
+                        selected: _serviceType == 'dine-in',
+                        onTap: () => setState(() => _serviceType = 'dine-in'),
+                      ),
+                    ],
+                  ),
+                ),
               SizedBox(
                 width: double.infinity,
                 height: 48,
@@ -547,8 +574,10 @@ class _CartScreenState extends State<CartScreen> {
                               color: Colors.white, strokeWidth: 2))
                       : Text(
                           _reserveMode && cart.scheduledFor != null
-                              ? 'Reserve Order'
-                              : 'Place Order',
+                              ? 'Reserve Pickup'
+                              : _serviceType == 'dine-in'
+                                  ? 'Place Dine-In Order'
+                                  : 'Place Pickup Order',
                           style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold)),
@@ -582,11 +611,13 @@ class _CartScreenState extends State<CartScreen> {
       cartItems: cart.items.toList(),
       student: auth.user!,
       scheduledFor: cart.scheduledFor,
+      serviceType: _reserveMode ? 'pickup' : _serviceType,
     );
     if (success && context.mounted) {
       cart.clear();
       setState(() {
         _reserveMode = false;
+        _serviceType = 'pickup';
         _breaks = [];
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -628,6 +659,52 @@ class _QtyButton extends StatelessWidget {
         ),
         child: Icon(icon,
             size: 16, color: filled ? Colors.white : kOrange),
+      ),
+    );
+  }
+}
+
+class _ServiceTypeBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ServiceTypeBtn({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? kOrange : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: selected ? Colors.white : Colors.grey),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                  color: selected ? Colors.white : Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
