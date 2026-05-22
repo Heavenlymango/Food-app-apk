@@ -23,9 +23,13 @@ class ApiService {
       headers: await _headers(),
       body: jsonEncode(body),
     );
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    Map<String, dynamic> data = {};
+    try {
+      if (res.body.isNotEmpty) data = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {}
     if (res.statusCode >= 400) {
-      throw ApiException(data['error'] as String? ?? 'Request failed');
+      throw ApiException(
+          data['error'] as String? ?? data['detail'] as String? ?? 'Request failed (${res.statusCode})');
     }
     return data;
   }
@@ -35,9 +39,13 @@ class ApiService {
       Uri.parse('${AppConfig.apiBaseUrl}$path'),
       headers: await _headers(),
     );
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    Map<String, dynamic> data = {};
+    try {
+      if (res.body.isNotEmpty) data = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {}
     if (res.statusCode >= 400) {
-      throw ApiException(data['error'] as String? ?? 'Request failed');
+      throw ApiException(
+          data['error'] as String? ?? data['detail'] as String? ?? 'Request failed (${res.statusCode})');
     }
     return data;
   }
