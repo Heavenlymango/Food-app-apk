@@ -5,11 +5,10 @@ class AppConfig {
   static const String apiBaseUrl =
       'https://qavwicfoiccfwfntumjj.supabase.co/functions/v1/make-server-36162e30';
 
-  // Food recognition - Roboflow YOLOv8 nano API
-  // Set your Roboflow API key here (get one free at roboflow.com)
-  static const String roboflowApiKey = 'YOUR_ROBOFLOW_API_KEY';
-  static const String roboflowApiUrl =
-      'https://detect.roboflow.com/food-detection-51us1/1';
+  // Inference server — set to your deployed URL (e.g. https://your-server.com)
+  // POST /yolo  →  multipart image  →  {"predictions":[{label,confidence}], ...}
+  // Leave empty to skip cloud YOLO fallback
+  static const String inferenceApiUrl = '';
 
   // MobileNetV3 model
   static const String mobilenetModelPath = 'assets/models/mobilenet_food.tflite';

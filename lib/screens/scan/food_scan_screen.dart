@@ -380,8 +380,12 @@ class _ResultsSheetState extends State<_ResultsSheet> {
   Widget build(BuildContext context) {
     final cart = context.read<CartProvider>();
     final results = widget.output.results;
-    final modelLabel = widget.output.modelUsed == 'mobilenet'
-        ? 'MobileNetV3' : 'YOLOv11-small';
+    final modelLabel = switch (widget.output.modelUsed) {
+      'mobilenet'  => 'MobileNetV3',
+      'yolo_cloud' => 'YOLOv11 · Cloud',
+      _            => 'YOLOv11-small',
+    };
+    final isCloud = widget.output.modelUsed == 'yolo_cloud';
     final confPct = (widget.output.topConfidence * 100).toStringAsFixed(0);
 
     return DraggableScrollableSheet(
@@ -430,19 +434,22 @@ class _ResultsSheetState extends State<_ResultsSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: widget.output.modelUsed == 'mobilenet'
-                    ? const Color(0xFFeff6ff) : const Color(0xFFfdf4ff),
-                border: Border.all(
-                  color: widget.output.modelUsed == 'mobilenet'
-                      ? const Color(0xFFbfdbfe) : const Color(0xFFe9d5ff)),
+                    ? const Color(0xFFeff6ff)
+                    : isCloud ? const Color(0xFFf0fdf4) : const Color(0xFFfdf4ff),
+                border: Border.all(color: widget.output.modelUsed == 'mobilenet'
+                    ? const Color(0xFFbfdbfe)
+                    : isCloud ? const Color(0xFFbbf7d0) : const Color(0xFFe9d5ff)),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(
                   widget.output.modelUsed == 'mobilenet'
-                      ? Icons.offline_bolt : Icons.security,
+                      ? Icons.offline_bolt
+                      : isCloud ? Icons.cloud : Icons.security,
                   size: 14,
                   color: widget.output.modelUsed == 'mobilenet'
-                      ? const Color(0xFF1d4ed8) : const Color(0xFF7c3aed),
+                      ? const Color(0xFF1d4ed8)
+                      : isCloud ? const Color(0xFF16a34a) : const Color(0xFF7c3aed),
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -450,7 +457,8 @@ class _ResultsSheetState extends State<_ResultsSheet> {
                   style: TextStyle(
                     fontSize: 12, fontWeight: FontWeight.w600,
                     color: widget.output.modelUsed == 'mobilenet'
-                        ? const Color(0xFF1d4ed8) : const Color(0xFF7c3aed),
+                        ? const Color(0xFF1d4ed8)
+                        : isCloud ? const Color(0xFF16a34a) : const Color(0xFF7c3aed),
                   ),
                 ),
               ]),

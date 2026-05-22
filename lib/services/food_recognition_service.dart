@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 import '../config/app_config.dart';
@@ -43,7 +45,9 @@ class FoodRecognitionService {
   bool _mobileNetLoaded = false;
   bool _yoloLoaded = false;
 
-  bool get isModelLoaded => _mobileNetLoaded;
+  bool get isModelLoaded => _mobileNetLoaded || AppConfig.inferenceApiUrl.isNotEmpty;
+
+  bool get _cloudAvailable => AppConfig.inferenceApiUrl.isNotEmpty;
 
   // ── ImageNet normalisation constants ───────────────────────────────────────
   static const _mean = [0.485, 0.456, 0.406];
@@ -94,9 +98,9 @@ class FoodRecognitionService {
     }
   }
 
-  // ── Two-stage pipeline ─────────────────────────────────────────────────────
+  // ── Main entry point ──────────────────────────────────────────────────────
+  // Pipeline: MobileNet local TFLite → if low confidence → cloud /yolo endpoint
   Future<RecognitionOutput> recognize(File imageFile) async {
-    // Try MobileNet first; if unavailable fall straight through to YOLO
     if (!_mobileNetLoaded) await loadModel();
 
     if (_mobileNetLoaded) {
@@ -104,21 +108,21 @@ class FoodRecognitionService {
       final topConf = mobileResults.isNotEmpty ? mobileResults.first.confidence : 0.0;
 
       if (topConf >= AppConfig.confidenceThreshold) {
-        return RecognitionOutput(
-          results: mobileResults,
-          modelUsed: 'mobilenet',
-          topConfidence: topConf,
-        );
+        return RecognitionOutput(results: mobileResults, modelUsed: 'mobilenet', topConfidence: topConf);
       }
 
-      // Low confidence — upgrade to YOLOv11-small
+      // Low confidence — try cloud YOLO first, then local YOLO as last resort
+      if (_cloudAvailable) {
+        try {
+          return await _recognizeViaCloudYolo(imageFile);
+        } catch (e) {
+          dev.log('Cloud YOLO failed: $e — trying local YOLO', name: 'FoodRecognition');
+        }
+      }
+
       final yoloLoaded = await _loadYolo();
       if (!yoloLoaded) {
-        return RecognitionOutput(
-          results: mobileResults,
-          modelUsed: 'mobilenet',
-          topConfidence: topConf,
-        );
+        return RecognitionOutput(results: mobileResults, modelUsed: 'mobilenet', topConfidence: topConf);
       }
       final yoloResults = await _runYoloSmall(imageFile);
       return RecognitionOutput(
@@ -128,16 +132,49 @@ class FoodRecognitionService {
       );
     }
 
-    // MobileNet unavailable — try YOLO directly
-    dev.log('MobileNet unavailable, trying YOLO directly', name: 'FoodRecognition');
+    // MobileNet failed to load — try cloud YOLO, then local YOLO
+    if (_cloudAvailable) {
+      try {
+        return await _recognizeViaCloudYolo(imageFile);
+      } catch (e) {
+        dev.log('Cloud YOLO failed: $e — trying local YOLO', name: 'FoodRecognition');
+      }
+    }
     final yoloLoaded = await _loadYolo();
-    if (!yoloLoaded) throw Exception('No food recognition model could be loaded');
+    if (!yoloLoaded) throw Exception('No food recognition model available');
     final yoloResults = await _runYoloSmall(imageFile);
     return RecognitionOutput(
       results: yoloResults,
       modelUsed: 'yolo_small',
       topConfidence: yoloResults.isNotEmpty ? yoloResults.first.confidence : 0.0,
     );
+  }
+
+  // ── Cloud YOLO via inference server POST /yolo ─────────────────────────────
+  Future<RecognitionOutput> _recognizeViaCloudYolo(File imageFile) async {
+    final uri = Uri.parse('${AppConfig.inferenceApiUrl}/yolo');
+    final request = http.MultipartRequest('POST', uri)
+      ..files.add(await http.MultipartFile.fromPath('file', imageFile.path));
+
+    final streamed = await request.send().timeout(const Duration(seconds: 20));
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode != 200) {
+      throw Exception('Cloud YOLO error ${response.statusCode}: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final preds = (data['predictions'] as List<dynamic>? ?? []);
+    final results = preds.map((p) {
+      final m = p as Map<String, dynamic>;
+      return RecognitionResult(
+        label: m['label'] as String,
+        confidence: (m['confidence'] as num).toDouble(),
+      );
+    }).toList();
+
+    final topConf = results.isNotEmpty ? results.first.confidence : 0.0;
+    return RecognitionOutput(results: results, modelUsed: 'yolo_cloud', topConfidence: topConf);
   }
 
   // ── MobileNetV3 inference (224×224, ImageNet normalisation) ───────────────
