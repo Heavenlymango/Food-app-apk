@@ -1,3 +1,4 @@
+import 'dart:developer' as dev;
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
@@ -48,21 +49,31 @@ class FoodRecognitionService {
   static const _mean = [0.485, 0.456, 0.406];
   static const _std  = [0.229, 0.224, 0.225];
 
-  // ── Load MobileNetV3 (called at app start) ─────────────────────────────────
-  Future<bool> loadModel() async {
-    if (_mobileNetLoaded) return true;
+  // ── Load labels (shared by both models) ───────────────────────────────────
+  Future<void> _ensureLabels() async {
+    if (_labels.isNotEmpty) return;
     try {
-      _mobileNet = await Interpreter.fromAsset(AppConfig.mobilenetModelPath);
-      final labelsData =
-          await rootBundle.loadString(AppConfig.mobilenetLabelsPath);
+      final labelsData = await rootBundle.loadString(AppConfig.mobilenetLabelsPath);
       _labels = labelsData
           .split('\n')
           .map((l) => l.trim())
           .where((l) => l.isNotEmpty)
           .toList();
+    } catch (e) {
+      dev.log('Labels load failed: $e', name: 'FoodRecognition');
+    }
+  }
+
+  // ── Load MobileNetV3 (called at app start) ─────────────────────────────────
+  Future<bool> loadModel() async {
+    if (_mobileNetLoaded) return true;
+    try {
+      _mobileNet = await Interpreter.fromAsset(AppConfig.mobilenetModelPath);
+      await _ensureLabels();
       _mobileNetLoaded = true;
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      dev.log('MobileNet load failed: $e', name: 'FoodRecognition', error: e, stackTrace: st);
       _mobileNetLoaded = false;
       return false;
     }
@@ -73,9 +84,11 @@ class FoodRecognitionService {
     if (_yoloLoaded) return true;
     try {
       _yoloSmall = await Interpreter.fromAsset(AppConfig.yoloModelPath);
+      await _ensureLabels();
       _yoloLoaded = true;
       return true;
-    } catch (_) {
+    } catch (e, st) {
+      dev.log('YOLO load failed: $e', name: 'FoodRecognition', error: e, stackTrace: st);
       _yoloLoaded = false;
       return false;
     }
@@ -83,39 +96,47 @@ class FoodRecognitionService {
 
   // ── Two-stage pipeline ─────────────────────────────────────────────────────
   Future<RecognitionOutput> recognize(File imageFile) async {
-    if (!_mobileNetLoaded) {
-      final loaded = await loadModel();
-      if (!loaded) throw Exception('MobileNetV3 model not loaded');
-    }
+    // Try MobileNet first; if unavailable fall straight through to YOLO
+    if (!_mobileNetLoaded) await loadModel();
 
-    final mobileResults = await _runMobileNet(imageFile);
-    final topConf = mobileResults.isNotEmpty ? mobileResults.first.confidence : 0.0;
+    if (_mobileNetLoaded) {
+      final mobileResults = await _runMobileNet(imageFile);
+      final topConf = mobileResults.isNotEmpty ? mobileResults.first.confidence : 0.0;
 
-    if (topConf >= AppConfig.confidenceThreshold) {
+      if (topConf >= AppConfig.confidenceThreshold) {
+        return RecognitionOutput(
+          results: mobileResults,
+          modelUsed: 'mobilenet',
+          topConfidence: topConf,
+        );
+      }
+
+      // Low confidence — upgrade to YOLOv11-small
+      final yoloLoaded = await _loadYolo();
+      if (!yoloLoaded) {
+        return RecognitionOutput(
+          results: mobileResults,
+          modelUsed: 'mobilenet',
+          topConfidence: topConf,
+        );
+      }
+      final yoloResults = await _runYoloSmall(imageFile);
       return RecognitionOutput(
-        results: mobileResults,
-        modelUsed: 'mobilenet',
-        topConfidence: topConf,
+        results: yoloResults.isNotEmpty ? yoloResults : mobileResults,
+        modelUsed: 'yolo_small',
+        topConfidence: yoloResults.isNotEmpty ? yoloResults.first.confidence : topConf,
       );
     }
 
-    // Low confidence — upgrade to YOLOv11-small
+    // MobileNet unavailable — try YOLO directly
+    dev.log('MobileNet unavailable, trying YOLO directly', name: 'FoodRecognition');
     final yoloLoaded = await _loadYolo();
-    if (!yoloLoaded) {
-      // Fall back to MobileNet results if YOLO fails to load
-      return RecognitionOutput(
-        results: mobileResults,
-        modelUsed: 'mobilenet',
-        topConfidence: topConf,
-      );
-    }
+    if (!yoloLoaded) throw Exception('No food recognition model could be loaded');
     final yoloResults = await _runYoloSmall(imageFile);
     return RecognitionOutput(
-      results: yoloResults.isNotEmpty ? yoloResults : mobileResults,
+      results: yoloResults,
       modelUsed: 'yolo_small',
-      topConfidence: yoloResults.isNotEmpty
-          ? yoloResults.first.confidence
-          : topConf,
+      topConfidence: yoloResults.isNotEmpty ? yoloResults.first.confidence : 0.0,
     );
   }
 
@@ -207,11 +228,11 @@ class FoodRecognitionService {
     ];
     _yoloSmall!.run(input, output);
 
-    // Aggregate max class score across all anchors
+    // Aggregate max class score across all anchors — apply sigmoid to convert logits → probabilities
     final classScores = List<double>.filled(nc, 0.0);
     for (int a = 0; a < numAnchors; a++) {
       for (int c = 0; c < nc; c++) {
-        final score = output[0][a][4 + c];
+        final score = _sigmoid(output[0][a][4 + c]);
         if (score > classScores[c]) classScores[c] = score;
       }
     }
@@ -228,6 +249,8 @@ class FoodRecognitionService {
         })
         .toList();
   }
+
+  double _sigmoid(double x) => 1.0 / (1.0 + _exp(-x));
 
   double _exp(double x) => x > 20 ? 485165195 : (x < -20 ? 0 : _expTable(x));
   double _expTable(double x) {

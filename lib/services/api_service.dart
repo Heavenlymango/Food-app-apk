@@ -54,15 +54,33 @@ class ApiService {
   static Future<List<Order>> getStudentOrders() async {
     final userId = _db.auth.currentUser?.id;
     if (userId == null) return [];
-    final data = await _db
+
+    final orders = await _db
         .from('orders')
-        .select('*, shops!inner(shop_code), order_items(*)')
+        .select('*, shops!inner(shop_code)')
         .eq('student_id', userId)
         .order('ordered_at', ascending: false)
-        .limit(50);
-    return (data as List)
-        .map((e) => Order.fromSupabase(e as Map<String, dynamic>))
-        .toList();
+        .limit(50) as List;
+
+    if (orders.isEmpty) return [];
+
+    final orderIds = orders.map((o) => o['id'] as String).toList();
+    final items = await _db
+        .from('order_items')
+        .select('order_id, id, menu_item_id, item_name, unit_price, quantity, menu_items(calories)')
+        .inFilter('order_id', orderIds) as List;
+
+    final itemsByOrder = <String, List<Map<String, dynamic>>>{};
+    for (final item in items) {
+      final oid = item['order_id'] as String;
+      itemsByOrder.putIfAbsent(oid, () => []).add(item as Map<String, dynamic>);
+    }
+
+    return orders.map((o) {
+      final map = Map<String, dynamic>.from(o as Map);
+      map['order_items'] = itemsByOrder[map['id']] ?? [];
+      return Order.fromSupabase(map);
+    }).toList();
   }
 
   static Future<List<Order>> getSellerOrders() async {
