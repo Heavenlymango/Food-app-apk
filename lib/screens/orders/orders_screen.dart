@@ -198,6 +198,45 @@ class _OrderCard extends StatelessWidget {
                       const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
 
+                // Reservation banner
+                if (order.isReservation) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDE9FE),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFA78BFA)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.event,
+                            size: 16, color: Color(0xFF7C3AED)),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Scheduled / Reservation',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF6D28D9))),
+                            Text(
+                              DateFormat('EEE, MMM d · h:mm a')
+                                  .format(order.scheduledFor!.toLocal()),
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF5B21B6)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 // Status message
                 if (order.status == 'completed') ...[
                   const SizedBox(height: 10),
