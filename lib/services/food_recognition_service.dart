@@ -45,6 +45,19 @@ class FoodRecognitionService {
   bool _mobileNetLoaded = false;
   bool _yoloLoaded = false;
 
+  // Fallback labels — same order as assets/models/food_labels.txt and the
+  // Python class_names.json. Used if the asset fails to load (e.g. APK
+  // bundling issue), so the UI never falls back to "Unknown".
+  static const _fallbackLabels = <String>[
+    'amok', 'bai_sach_chrouk', 'banana_pancakes', 'buddha_bowl', 'curry',
+    'dumplings', 'french_fries', 'fried_egg', 'fried_rice', 'grilled_corn',
+    'grilled_pork_ribs', 'grilled_skewer', 'hamburger', 'khor_ko', 'kuy_teav',
+    'laksa', 'lok_lak', 'nom_banh_chok', 'num_pang', 'pad_thai',
+    'papaya_salad', 'pho', 'pizza', 'pleah_sach_ko', 'ramen',
+    'rice porridge', 'samlor_korko', 'samlor_machu', 'spring_rolls', 'sushi',
+    'tofu_bowl', 'tom_yum_soup',
+  ];
+
   bool get isModelLoaded => _mobileNetLoaded || AppConfig.inferenceApiUrl.isNotEmpty;
 
   bool get _cloudAvailable => AppConfig.inferenceApiUrl.isNotEmpty;
@@ -64,7 +77,10 @@ class FoodRecognitionService {
           .where((l) => l.isNotEmpty)
           .toList();
     } catch (e) {
-      dev.log('Labels load failed: $e', name: 'FoodRecognition');
+      dev.log('Labels load failed, using fallback: $e', name: 'FoodRecognition');
+    }
+    if (_labels.isEmpty) {
+      _labels = List<String>.from(_fallbackLabels);
     }
   }
 
@@ -254,22 +270,29 @@ class FoodRecognitionService {
       ),
     );
 
-    // YOLOv11-small TFLite output: [1, 8400, 36]  (36 = 4 bbox + 32 classes)
-    final outputShape = _yoloSmall!.getOutputTensor(0).shape; // e.g. [1, 8400, 36]
-    final numAnchors  = outputShape[1];
-    final numCols     = outputShape[2]; // 4 + num_classes
-    final nc          = numCols - 4;
+    // YOLOv11-small TFLite output is [1, dim1, dim2]. Two known layouts:
+    //   - [1, 4+nc, num_anchors] = [1, 36, 8400]   (standard Ultralytics export)
+    //   - [1, num_anchors, 4+nc] = [1, 8400, 36]   (some transposed exports)
+    // Whichever dim is smaller (~36) is the feature axis (4 bbox + nc classes).
+    final outputShape = _yoloSmall!.getOutputTensor(0).shape;
+    final dim1 = outputShape[1];
+    final dim2 = outputShape[2];
+    final featuresFirst = dim1 < dim2;
+    final numCols    = featuresFirst ? dim1 : dim2; // 4 + num_classes
+    final numAnchors = featuresFirst ? dim2 : dim1;
+    final nc = numCols - 4;
 
     final output = [
-      List.generate(numAnchors, (_) => List<double>.filled(numCols, 0.0))
+      List.generate(dim1, (_) => List<double>.filled(dim2, 0.0))
     ];
     _yoloSmall!.run(input, output);
 
-    // Aggregate max class score across all anchors — apply sigmoid to convert logits → probabilities
+    // Aggregate max class score across all anchors — apply sigmoid (logits → probs)
     final classScores = List<double>.filled(nc, 0.0);
-    for (int a = 0; a < numAnchors; a++) {
-      for (int c = 0; c < nc; c++) {
-        final score = _sigmoid(output[0][a][4 + c]);
+    for (int c = 0; c < nc; c++) {
+      for (int a = 0; a < numAnchors; a++) {
+        final raw = featuresFirst ? output[0][4 + c][a] : output[0][a][4 + c];
+        final score = _sigmoid(raw);
         if (score > classScores[c]) classScores[c] = score;
       }
     }
