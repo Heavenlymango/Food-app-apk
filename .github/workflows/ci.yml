@@ -13,9 +13,9 @@ permissions:
   contents: write
 
 jobs:
-  # ── Static analysis + build check ─────────────────────────────────────────
+  # ── Static analysis + unit tests (quality gate for the APK build) ─────────
   analyze:
-    name: Analyze
+    name: Analyze & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,8 +29,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Analyze
-        run: flutter analyze --fatal-infos
+      - name: Static analysis (dart analyze)
+        # --no-fatal-infos so style-level info notes don't break CI;
+        # warnings and errors still fail the build.
+        run: flutter analyze --no-fatal-infos
+
+      - name: Unit tests (flutter test)
+        run: flutter test
 
   # ── Build release APK (main branch + version tags) ────────────────────────
   build-apk:

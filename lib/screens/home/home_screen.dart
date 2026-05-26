@@ -11,6 +11,7 @@ import '../profile/profile_screen.dart';
 import '../tips/tips_screen.dart';
 import '../scan/food_scan_screen.dart';
 import '../dashboard/dashboard_screen.dart';
+import '../faq/faq_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -261,6 +262,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.pop(context);
                 Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => const TipsScreen(),
+                ));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.help_outline, color: Colors.black54),
+              title: const Text('FAQ & References'),
+              subtitle: const Text(
+                'How we classify food, and why 80% AI threshold',
+                style: TextStyle(fontSize: 11),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const FAQScreen(),
                 ));
               },
             ),

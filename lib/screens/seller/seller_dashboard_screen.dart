@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/order_provider.dart';
 import '../../models/order.dart';
 import '../../app.dart';
+import '../faq/faq_screen.dart';
 
 class SellerDashboardScreen extends StatefulWidget {
   const SellerDashboardScreen({super.key});
@@ -23,7 +25,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -67,13 +69,24 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
           indicatorColor: kOrange,
           labelColor: kOrange,
           unselectedLabelColor: Colors.grey,
+          isScrollable: true,
           tabs: const [
             Tab(icon: Icon(Icons.receipt_long), text: 'Orders'),
+            Tab(icon: Icon(Icons.bar_chart), text: 'Analytics'),
             Tab(icon: Icon(Icons.restaurant_menu), text: 'Menu'),
             Tab(icon: Icon(Icons.settings), text: 'Settings'),
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: 'FAQ & References',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const FAQScreen(),
+              ));
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _logout,
@@ -84,6 +97,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
         controller: _tabs,
         children: [
           _OrdersTab(shopCode: shopCode),
+          const _AnalyticsTab(),
           _MenuTab(shopCode: shopCode),
           _SettingsTab(shopCode: shopCode),
         ],
@@ -697,7 +711,7 @@ class _MenuItemFormState extends State<_MenuItemForm> {
                       children: [
                         Icon(Icons.local_offer, size: 16, color: kOrange),
                         SizedBox(width: 6),
-                        Text('Discount Schedules',
+                        Text('Promotion Schemes',
                             style: TextStyle(
                                 fontSize: 15, fontWeight: FontWeight.bold)),
                       ],
@@ -722,7 +736,7 @@ class _MenuItemFormState extends State<_MenuItemForm> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text(
-                      'No schedules yet. Add one to offer time-limited deals.',
+                      'No promotion schemes yet. Add one to offer time-limited deals.',
                       style: TextStyle(
                           color: Colors.grey.shade500, fontSize: 12),
                     ),
@@ -889,7 +903,7 @@ class _DiscountDialogState extends State<_DiscountDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add Discount Schedule'),
+      title: const Text('Add Promotion Scheme'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1508,5 +1522,539 @@ class _ActionButtons extends StatelessWidget {
           cancelReason:
               ctrl.text.isNotEmpty ? ctrl.text : null);
     }
+  }
+}
+
+// ─────────────────────────── ANALYTICS TAB ─────────────────────────────────
+
+class _AnalyticsTab extends StatelessWidget {
+  const _AnalyticsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final orders = context.watch<OrderProvider>().orders;
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final weekStart = todayStart.subtract(const Duration(days: 6));
+
+    bool inLast7(Order o) => !o.createdAt.toLocal().isBefore(weekStart);
+
+    final orders7d = orders.where(inLast7).toList();
+    final completed7d =
+        orders7d.where((o) => o.status == 'completed').toList();
+    final cancelled7d =
+        orders7d.where((o) => o.status == 'cancelled').toList();
+    final revenue7d =
+        completed7d.fold<double>(0, (s, o) => s + o.total);
+    final avgOrderValue =
+        completed7d.isEmpty ? 0.0 : revenue7d / completed7d.length;
+    final cancelRate = orders7d.isEmpty
+        ? 0.0
+        : (cancelled7d.length / orders7d.length) * 100;
+
+    // 7-day revenue
+    final days = List<_SellerDay>.generate(7, (i) {
+      final d = todayStart.subtract(Duration(days: 6 - i));
+      return _SellerDay(date: d, label: DateFormat('EEE').format(d));
+    });
+    for (final o in orders) {
+      if (o.status != 'completed') continue;
+      final d = o.createdAt.toLocal();
+      final key = DateTime(d.year, d.month, d.day);
+      for (final b in days) {
+        if (b.date == key) b.revenue += o.total;
+      }
+    }
+
+    // Top selling items (lifetime, exclude cancelled)
+    final qtyByItem = <String, int>{};
+    final revByItem = <String, double>{};
+    for (final o in orders) {
+      if (o.status == 'cancelled') continue;
+      for (final it in o.items) {
+        qtyByItem[it.name] = (qtyByItem[it.name] ?? 0) + it.quantity;
+        revByItem[it.name] =
+            (revByItem[it.name] ?? 0) + it.price * it.quantity;
+      }
+    }
+    final top = qtyByItem.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final topList = top.take(5).toList();
+
+    // Service split (last 7 days, non-cancelled) — Flutter Order model
+    // has no service type, so just count reservation vs immediate as a proxy
+    int reservation = 0, immediate = 0;
+    for (final o in orders7d.where((o) => o.status != 'cancelled')) {
+      if (o.isReservation) {
+        reservation += 1;
+      } else {
+        immediate += 1;
+      }
+    }
+
+    // Peak hours, last 7 days (6am..10pm)
+    final hourBuckets = List<int>.filled(24, 0);
+    for (final o in orders7d.where((o) => o.status != 'cancelled')) {
+      final h = o.createdAt.toLocal().hour;
+      hourBuckets[h] += 1;
+    }
+    final peakHours = <_HourBucket>[];
+    for (int h = 6; h < 22; h++) {
+      final lbl = h == 0
+          ? '12a'
+          : h < 12
+              ? '${h}a'
+              : h == 12
+                  ? '12p'
+                  : '${h - 12}p';
+      peakHours.add(_HourBucket(label: lbl, count: hourBuckets[h]));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // KPI grid
+        Row(
+          children: [
+            Expanded(
+                child: _SellerKpi(
+                    label: 'Revenue 7d',
+                    value: '\$${revenue7d.toStringAsFixed(2)}',
+                    icon: Icons.attach_money,
+                    color: kGreen)),
+            const SizedBox(width: 8),
+            Expanded(
+                child: _SellerKpi(
+                    label: 'Orders 7d',
+                    value: '${orders7d.length}',
+                    icon: Icons.shopping_bag,
+                    color: kOrange)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+                child: _SellerKpi(
+                    label: 'Avg Order',
+                    value: '\$${avgOrderValue.toStringAsFixed(2)}',
+                    icon: Icons.trending_up,
+                    color: Colors.blue.shade600)),
+            const SizedBox(width: 8),
+            Expanded(
+                child: _SellerKpi(
+                    label: 'Cancel %',
+                    value: '${cancelRate.toStringAsFixed(1)}%',
+                    icon: Icons.cancel,
+                    color: Colors.red)),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Revenue trend
+        _SellerSectionTitle(
+            icon: Icons.show_chart,
+            iconColor: kGreen,
+            title: 'Revenue — Last 7 Days',
+            subtitle: 'Completed orders only'),
+        _SellerChartCard(
+          child: SizedBox(
+            height: 180,
+            child: BarChart(_revenueChart(days)),
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // Top items
+        _SellerSectionTitle(
+            icon: Icons.emoji_events,
+            iconColor: kOrange,
+            title: 'Top Selling Items',
+            subtitle: 'By quantity sold (all-time)'),
+        _SellerChartCard(
+          child: topList.isEmpty
+              ? const SizedBox(
+                  height: 100,
+                  child: Center(
+                    child: Text('No sales yet.',
+                        style: TextStyle(color: Colors.grey)),
+                  ),
+                )
+              : Column(
+                  children: topList.map((e) {
+                    final qty = e.value;
+                    final rev = revByItem[e.key] ?? 0;
+                    final maxQty = topList.first.value;
+                    final pct = qty / maxQty;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(e.key,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                              Text('$qty sold · \$${rev.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.grey)),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: LinearProgressIndicator(
+                              value: pct,
+                              minHeight: 6,
+                              backgroundColor: Colors.grey.shade100,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(kOrange),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // Reservation vs immediate split
+        _SellerSectionTitle(
+            icon: Icons.event,
+            iconColor: Colors.blue.shade600,
+            title: 'Reservations vs Walk-in',
+            subtitle: 'Last 7 days'),
+        _SellerChartCard(
+          child: (reservation + immediate) == 0
+              ? const SizedBox(
+                  height: 140,
+                  child: Center(
+                    child: Text('No orders in the last 7 days.',
+                        style: TextStyle(color: Colors.grey)),
+                  ),
+                )
+              : SizedBox(
+                  height: 180,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: PieChart(
+                          PieChartData(
+                            centerSpaceRadius: 32,
+                            sectionsSpace: 2,
+                            sections: [
+                              PieChartSectionData(
+                                value: reservation.toDouble(),
+                                color: const Color(0xFF7C3AED),
+                                title: '$reservation',
+                                radius: 46,
+                                titleStyle: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              PieChartSectionData(
+                                value: immediate.toDouble(),
+                                color: kOrange,
+                                title: '$immediate',
+                                radius: 46,
+                                titleStyle: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _LegendDot(
+                              color: const Color(0xFF7C3AED),
+                              label: 'Reservation',
+                              value: '$reservation'),
+                          const SizedBox(height: 6),
+                          _LegendDot(
+                              color: kOrange,
+                              label: 'Walk-in',
+                              value: '$immediate'),
+                        ],
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                  ),
+                ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // Peak hours
+        _SellerSectionTitle(
+            icon: Icons.access_time,
+            iconColor: const Color(0xFF9333EA),
+            title: 'Peak Hours',
+            subtitle: 'Orders by hour-of-day · last 7 days'),
+        _SellerChartCard(
+          child: SizedBox(
+            height: 180,
+            child: BarChart(_peakChart(peakHours)),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  BarChartData _revenueChart(List<_SellerDay> days) {
+    final maxRev = days.fold<double>(0, (m, d) => d.revenue > m ? d.revenue : m);
+    final upper = (maxRev == 0 ? 10 : maxRev * 1.2).ceilToDouble();
+    return BarChartData(
+      maxY: upper,
+      gridData: const FlGridData(show: false),
+      borderData: FlBorderData(show: false),
+      titlesData: FlTitlesData(
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 42,
+            getTitlesWidget: (v, _) => Text('\$${v.toInt()}',
+                style: const TextStyle(fontSize: 9, color: Colors.grey)),
+          ),
+        ),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            getTitlesWidget: (value, _) {
+              final i = value.toInt();
+              if (i < 0 || i >= days.length) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(days[i].label,
+                    style: const TextStyle(fontSize: 10, color: Colors.grey)),
+              );
+            },
+          ),
+        ),
+      ),
+      barGroups: List.generate(days.length, (i) {
+        return BarChartGroupData(x: i, barRods: [
+          BarChartRodData(
+            toY: days[i].revenue,
+            color: kGreen,
+            width: 18,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+          ),
+        ]);
+      }),
+    );
+  }
+
+  BarChartData _peakChart(List<_HourBucket> hours) {
+    final maxC = hours.fold<int>(0, (m, h) => h.count > m ? h.count : m);
+    final upper = (maxC == 0 ? 5 : (maxC * 1.2)).ceilToDouble();
+    return BarChartData(
+      maxY: upper,
+      gridData: const FlGridData(show: false),
+      borderData: FlBorderData(show: false),
+      titlesData: FlTitlesData(
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 24,
+            interval: 1,
+            getTitlesWidget: (v, _) => Text(v.toInt().toString(),
+                style: const TextStyle(fontSize: 9, color: Colors.grey)),
+          ),
+        ),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            getTitlesWidget: (value, _) {
+              final i = value.toInt();
+              if (i < 0 || i >= hours.length || i % 2 != 0) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(hours[i].label,
+                    style: const TextStyle(fontSize: 9, color: Colors.grey)),
+              );
+            },
+          ),
+        ),
+      ),
+      barGroups: List.generate(hours.length, (i) {
+        return BarChartGroupData(x: i, barRods: [
+          BarChartRodData(
+            toY: hours[i].count.toDouble(),
+            color: const Color(0xFF9333EA),
+            width: 8,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+          ),
+        ]);
+      }),
+    );
+  }
+}
+
+class _SellerDay {
+  final DateTime date;
+  final String label;
+  double revenue = 0;
+  _SellerDay({required this.date, required this.label});
+}
+
+class _HourBucket {
+  final String label;
+  final int count;
+  const _HourBucket({required this.label, required this.count});
+}
+
+class _SellerKpi extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  const _SellerKpi({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style:
+                        const TextStyle(fontSize: 10, color: Colors.grey)),
+                Text(value,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SellerSectionTitle extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  const _SellerSectionTitle({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(icon, color: iconColor, size: 18),
+            const SizedBox(width: 6),
+            Text(title,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.bold)),
+          ]),
+          Padding(
+            padding: const EdgeInsets.only(left: 24, top: 2),
+            child: Text(subtitle,
+                style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SellerChartCard extends StatelessWidget {
+  final Widget child;
+  const _SellerChartCard({required this.child});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  final String value;
+  const _LegendDot({
+    required this.color,
+    required this.label,
+    required this.value,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 12)),
+            Text(value,
+                style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          ],
+        ),
+      ],
+    );
   }
 }

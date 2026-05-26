@@ -3,15 +3,27 @@ import 'package:provider/provider.dart';
 import '../app.dart';
 import '../models/menu_item.dart';
 import '../providers/cart_provider.dart';
+import '../utils/health_classification.dart';
 
 class MenuItemCard extends StatelessWidget {
   final MenuItem item;
   const MenuItemCard({super.key, required this.item});
 
+  ClassificationResult get _classification => classifyItem(ClassifiableItem(
+        name: item.name,
+        category: item.category,
+        calories: item.calories,
+        isHealthy: item.isHealthy,
+      ));
+
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartProvider>();
     final inCart = cart.contains(item.id);
+    final classification = _classification;
+    final badge = badgeFor(classification.status);
+    final isWarning = classification.status == HealthStatus.unhealthy ||
+        classification.status == HealthStatus.caution;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -107,7 +119,7 @@ class MenuItemCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
 
-                    // Shop + calories + time
+                    // Shop + calories + time + health badge
                     Row(
                       children: [
                         Container(
@@ -122,6 +134,13 @@ class MenuItemCard extends StatelessWidget {
                               style: const TextStyle(
                                   fontSize: 10, color: Colors.black87)),
                         ),
+                        if (badge != null && isWarning) ...[
+                          const SizedBox(width: 4),
+                          _HealthBadgeChip(
+                            badge: badge,
+                            onTap: () => _showHealthReasons(context, classification),
+                          ),
+                        ],
                         const SizedBox(width: 6),
                         Icon(Icons.local_fire_department,
                             size: 12, color: Colors.orange.shade400),
@@ -350,4 +369,110 @@ class _Badge extends StatelessWidget {
               fontSize: 11, color: color, fontWeight: FontWeight.w500)),
     );
   }
+}
+
+class _HealthBadgeChip extends StatelessWidget {
+  final HealthBadge badge;
+  final VoidCallback onTap;
+  const _HealthBadgeChip({required this.badge, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEDD5),
+          border: Border.all(color: const Color(0xFFFB923C)),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.warning_amber_rounded,
+                size: 10, color: Color(0xFFC2410C)),
+            const SizedBox(width: 2),
+            Text(badge.label,
+                style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFFC2410C),
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(width: 2),
+            const Icon(Icons.info_outline,
+                size: 10, color: Color(0xFFC2410C)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+void _showHealthReasons(BuildContext context, ClassificationResult c) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (_) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.warning_amber_rounded,
+                  color: Color(0xFFC2410C), size: 22),
+              SizedBox(width: 8),
+              Text('Why this is flagged',
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...c.reasons.map((r) => Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: Color(0xFFFB923C), width: 3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.label,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 13)),
+                    const SizedBox(height: 4),
+                    Text(r.reason,
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.black87)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: r.sources
+                          .map((s) => Text(s.short,
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Color(0xFFEA580C),
+                                  decoration: TextDecoration.underline)))
+                          .toList(),
+                    ),
+                  ],
+                ),
+              )),
+          const Divider(height: 16),
+          const Text(
+            'Open the FAQ from the home screen for the full rule set, '
+            'links to each paper, and the rationale behind the AI scanner '
+            'threshold.',
+            style: TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+        ],
+      ),
+    ),
+  );
 }
