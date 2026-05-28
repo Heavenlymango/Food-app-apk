@@ -109,6 +109,14 @@ const List<_Rule> _rules = [
     ],
   ),
   _Rule(
+    label: 'Likely sweetened drink',
+    trigger: 'Category = Drinks, not seller-marked healthy, and not an explicitly unsweetened option (water, americano, green tea…)',
+    status: HealthStatus.caution,
+    rationale:
+        'Most prepared drinks on a campus menu carry added sugar even when the name does not say so. WHO recommends free sugars <10% of energy (ideally <5%). Flagged as caution since some may be lightly sweetened.',
+    sources: [HealthSources.who, HealthSources.fsa],
+  ),
+  _Rule(
     label: 'Sweet dessert / confectionery',
     trigger: 'Category = Desserts, or name contains cake, donut, cookie, candy, ice cream, pastry, chocolate',
     status: HealthStatus.unhealthy,

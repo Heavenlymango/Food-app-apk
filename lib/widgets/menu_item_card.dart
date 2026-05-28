@@ -134,7 +134,7 @@ class MenuItemCard extends StatelessWidget {
                               style: const TextStyle(
                                   fontSize: 10, color: Colors.black87)),
                         ),
-                        if (badge != null && isWarning) ...[
+                        if (badge != null && isWarning && !item.isHealthy) ...[
                           const SizedBox(width: 4),
                           _HealthBadgeChip(
                             badge: badge,

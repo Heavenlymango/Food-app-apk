@@ -93,9 +93,10 @@ class HealthSources {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 const _friedKeywords = ['fried', 'fries', 'deep-fry', 'deep fry', 'tempura', 'nugget', 'chip'];
-const _sugaryDrinkKeywords = ['soda', 'cola', 'pepsi', 'coke', 'sprite', 'fanta', 'lemonade', 'milkshake', 'frappe', 'bubble tea', 'boba', 'syrup'];
+const _sugaryDrinkKeywords = ['soda', 'cola', 'pepsi', 'coke', 'sprite', 'fanta', 'lemonade', 'milkshake', 'frappe', 'frappuccino', 'bubble tea', 'boba', 'syrup', 'milk tea', 'iced tea', 'thai tea', 'smoothie', 'juice', 'slush', 'mocha', 'latte'];
 const _sweetKeywords = ['cake', 'donut', 'doughnut', 'cookie', 'candy', 'ice cream', 'icecream', 'pastry', 'chocolate'];
 const _ultraProcessedCategories = ['Snacks', 'Desserts'];
+const _unsweetenedDrinkKeywords = ['water', 'americano', 'espresso', 'black coffee', 'unsweetened', 'green tea', 'plain tea', 'sparkling water', 'soda water'];
 
 bool _nameContains(String name, List<String> keywords) {
   final lower = name.toLowerCase();
@@ -137,6 +138,21 @@ HealthRule? _ruleSugaryDrink(ClassifiableItem item) {
     reason: 'Sugar-sweetened beverages typically exceed the FSA red threshold for drinks (>11.25 g sugar / 100 ml) and contribute to free-sugar intake which WHO recommends keeping below 10% of total energy (ideally below 5%).',
     status: HealthStatus.unhealthy,
     sources: [HealthSources.who, HealthSources.fsa, HealthSources.usda],
+  );
+}
+
+HealthRule? _ruleSweetenedDrinkCategory(ClassifiableItem item) {
+  final isDrink = (item.category ?? '').toLowerCase() == 'drinks';
+  if (!isDrink) return null;
+  if (item.isHealthy) return null;
+  if (_nameContains(item.name, _unsweetenedDrinkKeywords)) return null;
+  if (_nameContains(item.name, _sugaryDrinkKeywords)) return null; // stronger rule covers it
+  return const HealthRule(
+    id: 'sweetened-drink',
+    label: 'Likely sweetened',
+    reason: 'Most prepared drinks contain added sugar. WHO recommends keeping free sugars below 10% of daily energy (ideally below 5%); choose an unsweetened option where possible.',
+    status: HealthStatus.caution,
+    sources: [HealthSources.who, HealthSources.fsa],
   );
 }
 
@@ -191,6 +207,7 @@ const List<_RuleFn> _allRules = [
   _ruleHighCalorie,
   _ruleFried,
   _ruleSugaryDrink,
+  _ruleSweetenedDrinkCategory,
   _ruleSweetDessert,
   _ruleUltraProcessedCategory,
   _ruleSellerHealthy,

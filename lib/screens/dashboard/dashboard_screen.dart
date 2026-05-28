@@ -127,9 +127,9 @@ class DashboardScreen extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [kOrange, kOrange.withValues(alpha: 0.75)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                colors: [kOrange, const Color(0xFFF97316)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
               ),
               borderRadius: BorderRadius.circular(16),
             ),

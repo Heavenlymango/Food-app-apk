@@ -61,6 +61,35 @@ void main() {
       expect(r.status, HealthStatus.unhealthy);
       expect(r.reasons.any((x) => x.id == 'fried'), isTrue);
     });
+
+    test('milk tea is caught as a sugary drink', () {
+      final r = classifyItem(
+          item(name: 'Iced Milk Tea', category: 'Drinks', calories: 180));
+      expect(r.status, HealthStatus.unhealthy);
+      expect(r.reasons.any((x) => x.id == 'sugary-drink'), isTrue);
+    });
+  });
+
+  group('classifyItem — drinks coverage', () {
+    test('generic non-healthy drink gets a caution', () {
+      final r = classifyItem(
+          item(name: 'House Special Cooler', category: 'Drinks', calories: 120));
+      expect(r.status, HealthStatus.caution);
+      expect(r.reasons.any((x) => x.id == 'sweetened-drink'), isTrue);
+    });
+
+    test('explicitly unsweetened drink is not flagged', () {
+      final r = classifyItem(
+          item(name: 'Sparkling Water', category: 'Drinks', calories: 0));
+      expect(r.status, HealthStatus.neutral);
+    });
+
+    test('keyword drink stays unhealthy, not double-flagged caution', () {
+      final r = classifyItem(
+          item(name: 'Bubble Tea', category: 'Drinks', calories: 250));
+      expect(r.status, HealthStatus.unhealthy);
+      expect(r.reasons.any((x) => x.id == 'sweetened-drink'), isFalse);
+    });
   });
 
   group('classifyItem — healthy rules', () {

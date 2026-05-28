@@ -1601,12 +1601,12 @@ class _AnalyticsTab extends StatelessWidget {
     final peakHours = <_HourBucket>[];
     for (int h = 6; h < 22; h++) {
       final lbl = h == 0
-          ? '12a'
+          ? '12am'
           : h < 12
-              ? '${h}a'
+              ? '${h}am'
               : h == 12
-                  ? '12p'
-                  : '${h - 12}p';
+                  ? '12pm'
+                  : '${h - 12}pm';
       peakHours.add(_HourBucket(label: lbl, count: hourBuckets[h]));
     }
 

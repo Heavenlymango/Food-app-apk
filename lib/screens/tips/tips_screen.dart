@@ -203,7 +203,7 @@ class _HealthyItemTile extends StatelessWidget {
                   ),
                 ),
               ),
-              if (item.isSpecial)
+              if (item.hasDiscount)
                 Positioned(
                   top: 0,
                   left: 0,
@@ -217,8 +217,8 @@ class _HealthyItemTile extends StatelessWidget {
                         bottomRight: Radius.circular(8),
                       ),
                     ),
-                    child: const Text('-30%',
-                        style: TextStyle(
+                    child: Text('-${item.discountPercent.toStringAsFixed(0)}%',
+                        style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.bold)),
@@ -283,7 +283,7 @@ class _HealthyItemTile extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        if (item.isSpecial) ...[
+                        if (item.hasDiscount) ...[
                           Text(
                             '\$${item.price.toStringAsFixed(2)}',
                             style: const TextStyle(
