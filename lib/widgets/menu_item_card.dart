@@ -134,7 +134,13 @@ class MenuItemCard extends StatelessWidget {
                               style: const TextStyle(
                                   fontSize: 10, color: Colors.black87)),
                         ),
-                        if (badge != null && isWarning && !item.isHealthy && !item.hideUnhealthyBadge) ...[
+                        // Chip is hidden when (a) seller explicitly hides it,
+                        // or (b) a green leaf is currently visible (no double-
+                        // badging). "Visible leaf" = isHealthy AND not suppressed.
+                        if (badge != null &&
+                            isWarning &&
+                            !item.hideUnhealthyBadge &&
+                            !(item.isHealthy && !item.hideHealthyBadge)) ...[
                           const SizedBox(width: 4),
                           _HealthBadgeChip(
                             badge: badge,
