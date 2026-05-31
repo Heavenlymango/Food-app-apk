@@ -108,8 +108,24 @@ class _FoodScanScreenState extends State<FoodScanScreen>
       if (output.modelUsed == 'yolo_small' && mounted) {
         setState(() => _statusMsg = 'Upgraded to YOLOv11-small…');
       }
-      final keywords = output.results.map((r) => r.label.replaceAll('_', ' ')).toList();
-      final matched = menu.searchByKeywords(keywords);
+      // Match the TOP prediction only first. If nothing in the menu matches
+      // the most-confident dish, only THEN fall through to the lower-ranked
+      // predictions — otherwise an unrelated low-rank candidate can hijack
+      // the "menu items" panel (e.g. Khor Ko predicted top, but the seed menu
+      // has no Khor Ko item, so spring_rolls #4 would silently match).
+      List<MenuItem> matched = const [];
+      if (output.results.isNotEmpty) {
+        final topKeyword = output.results.first.label.replaceAll('_', ' ');
+        matched = menu.searchByKeywords([topKeyword]);
+        if (matched.isEmpty && output.results.length > 1) {
+          // Fallback: try the rest, but mark that the match is approximate.
+          final restKeywords = output.results
+              .skip(1)
+              .map((r) => r.label.replaceAll('_', ' '))
+              .toList();
+          matched = menu.searchByKeywords(restKeywords);
+        }
+      }
       if (mounted) {
         setState(() {
           _output = output;
