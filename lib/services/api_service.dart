@@ -224,7 +224,7 @@ class ApiService {
         _db
             .from('menu_items')
             .select(
-                'id, name, description, price, category, calories, is_healthy, is_special, image_url, preparation_time, shops!inner(shop_code, discount_percent)')
+                'id, name, description, price, category, calories, is_healthy, is_special, hide_healthy_badge, hide_unhealthy_badge, image_url, preparation_time, shops!inner(shop_code, discount_percent)')
             .eq('is_available', true),
         _db
             .from('item_discount_schedules')
@@ -261,6 +261,8 @@ class ApiService {
           'calories': (item['calories'] as num?)?.toInt() ?? 0,
           'isHealthy': item['is_healthy'] as bool? ?? false,
           'isSpecial': item['is_special'] as bool? ?? false,
+          'hideHealthyBadge': item['hide_healthy_badge'] as bool? ?? false,
+          'hideUnhealthyBadge': item['hide_unhealthy_badge'] as bool? ?? false,
           'image': item['image_url'] as String? ?? '',
           'preparationTime': (item['preparation_time'] as num?)?.toInt() ?? 15,
           'shop': shopCode,

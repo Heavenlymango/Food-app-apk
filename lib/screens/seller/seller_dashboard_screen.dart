@@ -449,6 +449,8 @@ class _MenuItemFormState extends State<_MenuItemForm> {
   String _category = 'Main Course';
   bool _healthy = false;
   bool _special = false;
+  bool _hideHealthyBadge = false;
+  bool _hideUnhealthyBadge = false;
   bool _saving = false;
   List<Map<String, dynamic>> _discounts = [];
   bool _loadingDiscounts = false;
@@ -480,6 +482,8 @@ class _MenuItemFormState extends State<_MenuItemForm> {
     _category = i?['category'] as String? ?? 'Main Course';
     _healthy = i?['is_healthy'] as bool? ?? false;
     _special = i?['is_special'] as bool? ?? false;
+    _hideHealthyBadge = i?['hide_healthy_badge'] as bool? ?? false;
+    _hideUnhealthyBadge = i?['hide_unhealthy_badge'] as bool? ?? false;
     if (widget.item != null) _loadDiscounts();
   }
 
@@ -506,6 +510,8 @@ class _MenuItemFormState extends State<_MenuItemForm> {
       'preparation_time': int.tryParse(_prepTime.text) ?? 15,
       'is_healthy': _healthy,
       'is_special': _special,
+      'hide_healthy_badge': _hideHealthyBadge,
+      'hide_unhealthy_badge': _hideUnhealthyBadge,
       'is_available': true,
     };
     try {
@@ -680,6 +686,37 @@ class _MenuItemFormState extends State<_MenuItemForm> {
                 value: _healthy,
                 activeThumbColor: kGreen,
                 onChanged: (v) => setState(() => _healthy = v),
+                contentPadding: EdgeInsets.zero,
+              ),
+              const Divider(height: 24),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Text('Badge overrides',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87)),
+              ),
+              SwitchListTile(
+                title: const Text('Hide Healthy badge',
+                    style: TextStyle(fontSize: 13)),
+                subtitle: const Text(
+                    'Suppress the green leaf even if item is marked Healthy.',
+                    style: TextStyle(fontSize: 11)),
+                value: _hideHealthyBadge,
+                activeThumbColor: Colors.grey,
+                onChanged: (v) => setState(() => _hideHealthyBadge = v),
+                contentPadding: EdgeInsets.zero,
+              ),
+              SwitchListTile(
+                title: const Text('Hide Unhealthy badge',
+                    style: TextStyle(fontSize: 13)),
+                subtitle: const Text(
+                    "Suppress the auto-classifier's orange label for this item.",
+                    style: TextStyle(fontSize: 11)),
+                value: _hideUnhealthyBadge,
+                activeThumbColor: Colors.grey,
+                onChanged: (v) => setState(() => _hideUnhealthyBadge = v),
                 contentPadding: EdgeInsets.zero,
               ),
               const SizedBox(height: 20),

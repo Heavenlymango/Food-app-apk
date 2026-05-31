@@ -107,7 +107,7 @@ class MenuItemCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (item.isHealthy)
+                        if (item.isHealthy && !item.hideHealthyBadge)
                           Icon(Icons.eco, size: 16, color: kGreen),
                       ],
                     ),
@@ -134,7 +134,7 @@ class MenuItemCard extends StatelessWidget {
                               style: const TextStyle(
                                   fontSize: 10, color: Colors.black87)),
                         ),
-                        if (badge != null && isWarning && !item.isHealthy) ...[
+                        if (badge != null && isWarning && !item.isHealthy && !item.hideUnhealthyBadge) ...[
                           const SizedBox(width: 4),
                           _HealthBadgeChip(
                             badge: badge,
@@ -264,7 +264,7 @@ class MenuItemCard extends StatelessWidget {
                       style: const TextStyle(
                           fontSize: 20, fontWeight: FontWeight.bold)),
                 ),
-                if (item.isHealthy)
+                if (item.isHealthy && !item.hideHealthyBadge)
                   Icon(Icons.eco, color: kGreen, size: 20),
               ],
             ),
@@ -277,7 +277,7 @@ class MenuItemCard extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                if (item.isHealthy) _Badge(label: 'Healthy', color: kGreen),
+                if (item.isHealthy && !item.hideHealthyBadge) _Badge(label: 'Healthy', color: kGreen),
                 if (item.hasDiscount) ...[
                   const SizedBox(width: 8),
                   _Badge(

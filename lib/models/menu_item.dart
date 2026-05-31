@@ -7,6 +7,9 @@ class MenuItem {
   final int calories;
   final bool isHealthy;
   final bool isSpecial;
+  // Seller overrides for the two badges shown on menu cards.
+  final bool hideHealthyBadge;
+  final bool hideUnhealthyBadge;
   final String image;
   final int preparationTime;
   final String shop;
@@ -23,6 +26,8 @@ class MenuItem {
     required this.calories,
     required this.isHealthy,
     required this.isSpecial,
+    this.hideHealthyBadge = false,
+    this.hideUnhealthyBadge = false,
     required this.image,
     required this.preparationTime,
     required this.shop,
@@ -43,6 +48,8 @@ class MenuItem {
         calories: json['calories'] as int,
         isHealthy: json['isHealthy'] as bool,
         isSpecial: json['isSpecial'] as bool,
+        hideHealthyBadge: json['hideHealthyBadge'] as bool? ?? false,
+        hideUnhealthyBadge: json['hideUnhealthyBadge'] as bool? ?? false,
         image: json['image'] as String,
         preparationTime: json['preparationTime'] as int,
         shop: json['shop'] as String,
