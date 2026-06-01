@@ -349,43 +349,67 @@ class _HomeScreenState extends State<HomeScreen> {
     notifs.markAllRead();
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Notifications',
-                style:
-                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            if (notifs.notifications.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text('No notifications',
-                      style: TextStyle(color: Colors.grey)),
-                ),
-              )
-            else
-              ...notifs.notifications.take(10).map(
-                    (n) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.notifications_outlined,
-                          color: kOrange),
-                      title: Text(n.message,
-                          style: const TextStyle(fontSize: 13)),
-                      subtitle: Text(
-                        '${n.createdAt.hour}:${n.createdAt.minute.toString().padLeft(2, '0')}',
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.grey),
-                      ),
-                    ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, scrollController) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-          ],
+                ),
+              ),
+              const Text('Notifications',
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Expanded(
+                child: notifs.notifications.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Text('No notifications',
+                              style: TextStyle(color: Colors.grey)),
+                        ),
+                      )
+                    : ListView.separated(
+                        controller: scrollController,
+                        itemCount: notifs.notifications.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final n = notifs.notifications[i];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.notifications_outlined,
+                                color: kOrange),
+                            title: Text(n.message,
+                                style: const TextStyle(fontSize: 13)),
+                            subtitle: Text(
+                              '${n.createdAt.hour}:${n.createdAt.minute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
