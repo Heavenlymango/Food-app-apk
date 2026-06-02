@@ -15,10 +15,22 @@ class TipsScreen extends StatelessWidget {
         .where((i) => i.isHealthy)
         .toList();
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    // Wrapped in Scaffold so a back button + AppBar appear when this screen
+    // is pushed directly from the drawer. Without it the screen has no exit
+    // and shows the raw dark page background at the top.
+    return Scaffold(
+      backgroundColor: kBeige,
+      appBar: AppBar(
+        title: const Text('Tips & Advice',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Green header card
           Container(
             width: double.infinity,
@@ -163,6 +175,7 @@ class TipsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
         ],
+        ),
       ),
     );
   }
