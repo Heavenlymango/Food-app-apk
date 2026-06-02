@@ -44,18 +44,26 @@ class _ProfileScreenState extends State<ProfileScreen>
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Profile & Settings',
-              style: TextStyle(
-                  fontSize: 24, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          const Text('Manage your account and preferences',
-              style: TextStyle(color: Colors.grey, fontSize: 14)),
-          const SizedBox(height: 20),
+    // Wrap in Scaffold so the screen has a Material ancestor when pushed
+    // directly (e.g. from the drawer) — otherwise TextField throws
+    // "No Material widget found".
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        title: const Text('Profile & Settings',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Manage your account and preferences',
+                style: TextStyle(color: Colors.grey, fontSize: 14)),
+            const SizedBox(height: 20),
 
           // Tab bar
           Container(
@@ -109,6 +117,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             },
           ),
         ],
+        ),
       ),
     );
   }
